@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar</title>
+<link rel="stylesheet" href="radar.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot" aria-hidden="true"></span><div><h1>Token Launch Radar</h1><p class="sub" id="sub"></p></div></div>
+  <nav class="tabs" role="tablist">
+    <button data-tab="board" class="on">Pre-token board</button>
+    <button data-tab="model">Evidence</button>
+    <button data-tab="live">Live tokens</button>
+  </nav>
+</header>
+<section class="kpis" id="kpis"></section>
+<section class="acct" id="acct"></section>
+<main>
+  <section id="board" class="pane on">
+    <div class="filters">
+      <div class="seg" id="calls"></div>
+      <input id="q" type="search" placeholder="Search" aria-label="Search">
+      <select id="cat" aria-label="Category"></select>
+      <select id="chain" aria-label="Chain"></select>
+      <select id="tvl" aria-label="Minimum TVL">
+        <option value="0">Any TVL</option><option value="10000000">TVL &ge; $10M</option>
+        <option value="50000000">TVL &ge; $50M</option><option value="250000000">TVL &ge; $250M</option>
+      </select>
+      <label class="chk"><input id="wl" type="checkbox"> Watchlist</label>
+      <label class="chk"><input id="early" type="checkbox"> Off-list</label>
+      <label class="chk"><input id="up" type="checkbox"> Rising 7d</label>
+      <button id="reset" class="ghost">Reset</button>
+      <span class="fnote" id="fnote"></span>
+    </div>
+    <div class="split" id="split">
+      <div class="tablewrap">
+        <table id="tbl">
+          <thead><tr>
+            <th data-k="r" class="num">#</th><th data-k="n">Protocol</th>
+            <th data-k="tvl" class="num">TVL</th><th data-k="d7" class="num">7d</th>
+            <th data-k="age" class="num">No token</th><th data-k="odds" class="num">Token odds</th>
+            <th data-k="ifl" class="num">If it launches</th><th data-k="iv" class="num">Implied &middot; P25&ndash;P75</th>
+            <th data-k="nph" class="num">Verdict &middot; net/hr</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="foot" id="count"></p>
+      </div>
+      <aside id="detail" class="detail" aria-live="polite"></aside>
+    </div>
+  </section>
+  <section id="model" class="pane"></section>
+  <section id="live" class="pane"><div class="tablewrap"><table id="ltbl"><thead><tr>
+    <th>Protocol</th><th>Symbol</th><th>Category</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">mcap / TVL</th><th class="num">vs model</th>
+  </tr></thead><tbody></tbody></table></div></section>
+</main>
+<script src="../data.js"></script>
+<script src="radar.js"></script>
+</body>
+</html>
