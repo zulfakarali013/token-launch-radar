@@ -1,26 +1,32 @@
-// Token Launch Radar v2: fitted, held-out-tested models.
+// Token Launch Radar v3: fitted, held-out-tested models.
 //
-// Two models, both fitted on this snapshot alone and both tested on protocols they did not see:
+// Two models, both fitted on this snapshot alone and both tested on protocols they did not see.
 //
-//  1. The cap model: log(mcap / TVL) of the traded protocols, regressed (ridge) on candidate terms.
-//     Terms enter in a fixed order; a term stays only if it lowers the held-out error in BOTH tests:
-//       - leave-one-out (each traded protocol predicted by a fit on all the others), and
-//       - walk-forward (fit on the protocols DefiLlama listed first, predict the later-listed ones).
-//     The error is the median absolute miss in log space, shown as a multiple (x2.5 = off by 2.5x).
+//  1. Launch value. log(mcap / TVL) of the stand-alone traded tokens (lib/model.ts comps(): a token
+//     that trades and is not a bridge, staked, wrapped, exchange or versioned form of another one),
+//     regressed (ridge, and again with a Huber loss) on candidate terms that enter in a fixed order. A term stays only if it lowers
+//     the held-out miss in BOTH blind tests:
+//       - leave-one-out: each traded token priced by a fit on all the others;
+//       - walk-forward: fit on the earliest-listed 60%, price the newer 40% (the past grading the future).
+//     A third test, 10-fold, is reported beside them and never used to pick. The miss is the median
+//     absolute miss in log space, printed as a multiple (x2.5 = off by 2.5 times either way).
 //
-//  2. The token odds: a logistic regression of "records a token" over every protocol with a listing
-//     date, with the same keep-only-if-both-tests-improve rule (10-fold by slug order, and walk-forward),
-//     scored by the Brier score against the base rate.
+//  2. Token odds. A logistic regression of "records a token" over every stand-alone protocol with a
+//     listing date, scored by the Brier score against the base rate, with the same rule (10-fold and
+//     walk-forward must both improve).
 //
-// The ranges come from the cap model's own leave-one-out misses: P25..P75 and P10..P90 of the
-// residuals, and the page reports how often real caps fell inside them.
+// A term that is itself learned from the data (a category's premium, a category's token share) is
+// learned inside each training split only, so no protocol ever helps price itself. The ranges come
+// from the launch-value model's own leave-one-out misses, and the page prints how often real caps fell
+// inside them. A seeded bootstrap (200 refits) gives each coefficient a standard error and each
+// board row the range of ranks it takes when the data are redrawn.
 
 import type { Protocol } from './model.ts';
 
 export type Vec = number[];
 
 const LN = Math.log;
-const median = (xs: number[]) => {
+export const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return s.length === 0 ? NaN : s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
@@ -33,11 +39,26 @@ export const quantile = (xs: number[], q: number) => {
   const hi = Math.ceil(pos);
   return s[lo]! + (s[hi]! - s[lo]!) * (pos - lo);
 };
-const r4 = (x: number) => Math.round(x * 10_000) / 10_000;
+export const r4 = (x: number) => Math.round(x * 10_000) / 10_000;
+const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
+const logit = (p: number) => LN(p / (1 - p));
+const dot = (x: Vec, w: number[]) => x.reduce((s, v, j) => s + v * w[j]!, 0);
 
 export function ageYears(p: Protocol, asOf: string): number | null {
   if (!p.listed_at) return null;
   return Math.max(0, (Date.parse(`${asOf}T00:00:00Z`) - Date.parse(`${p.listed_at}T00:00:00Z`)) / (365.25 * 86_400_000));
+}
+
+/** A small seeded generator (mulberry32), so every bootstrap draw is the same on every run. */
+export function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
 }
 
 // ---------- linear algebra (small, dense, deterministic) ----------
@@ -75,8 +96,25 @@ export function ridge(X: Vec[], y: number[], penalty: number[]): number[] {
   return solve(A, b);
 }
 
+/** Huber regression by reweighted ridge: a miss within delta (log units) counts squared, a bigger
+ * one only linearly, so a handful of wild caps cannot drag the line. 40 reweighting rounds. */
+export function huber(X: Vec[], y: number[], penalty: number[], delta = HUBER_DELTA): number[] {
+  let w = ridge(X, y, penalty);
+  for (let it = 0; it < 40; it++) {
+    const wt = X.map((x, i) => {
+      const r = Math.abs(y[i]! - dot(x, w));
+      return r <= delta ? 1 : delta / r;
+    });
+    w = ridge(X.map((x, i) => x.map((v) => v * Math.sqrt(wt[i]!))), y.map((v, i) => v * Math.sqrt(wt[i]!)), penalty);
+  }
+  return w;
+}
+/** 1.5 in log units: a miss past about x4.5 counts linearly. Set once, before the term search. */
+export const HUBER_DELTA = 1.5;
+export type CapLoss = 'ridge' | 'huber';
+
 /** Penalised logistic regression by Newton steps. */
-export function logistic(X: Vec[], y: number[], penalty: number[], iters = 25): number[] {
+export function logistic(X: Vec[], y: number[], penalty: number[], iters = 30): number[] {
   const k = penalty.length;
   let w = new Array<number>(k).fill(0);
   for (let it = 0; it < iters; it++) {
@@ -84,8 +122,7 @@ export function logistic(X: Vec[], y: number[], penalty: number[], iters = 25): 
     const g = new Array<number>(k).fill(0);
     for (let i = 0; i < X.length; i++) {
       const x = X[i]!;
-      const z = x.reduce((s, v, j) => s + v * w[j]!, 0);
-      const p = 1 / (1 + Math.exp(-z));
+      const p = sigmoid(dot(x, w));
       const s = Math.max(p * (1 - p), 1e-6);
       for (let a = 0; a < k; a++) {
         g[a]! += (y[i]! - p) * x[a]!;
@@ -98,134 +135,196 @@ export function logistic(X: Vec[], y: number[], penalty: number[], iters = 25): 
     }
     const step = solve(H, g);
     w = w.map((v, j) => v + step[j]!);
-    if (step.every((s) => Math.abs(s) < 1e-9)) break;
+    if (step.every((s) => Math.abs(s) < 1e-10)) break;
   }
   return w;
 }
 
-const dot = (x: Vec, w: number[]) => x.reduce((s, v, j) => s + v * w[j]!, 0);
-const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
-
-// ---------- the candidate terms ----------
-/** A term turns a protocol into zero or more columns. `ridge` is its penalty. */
+// ---------- terms ----------
+/** A fitted term: its column for any protocol, and what it learned (for the page to recompute it). */
+export interface Enc {
+  col: (p: Protocol) => number;
+  table?: Record<string, number>;
+}
+/** A candidate term. `learn` sees only the training split (and its targets). */
 export interface Term {
   key: string;
   label: string;
   ridge: number;
-  cols: (p: Protocol) => number[];
+  learn: (train: Protocol[], y: number[]) => Enc;
 }
 
-export function categoryTerm(cats: string[], ridgePenalty: number): Term {
+const catOf = (p: Protocol) => p.category ?? 'Uncategorised';
+const fixed = (col: (p: Protocol) => number): Term['learn'] => () => ({ col });
+
+/** The simple terms; each is a fixed function of the protocol's own record (the page repeats them). */
+export function recordTerms(asOf: string) {
+  const years = (p: Protocol) => ageYears(p, asOf) ?? 1.5;
   return {
-    key: 'category',
-    label: `category effect (ridge ${ridgePenalty})`,
-    ridge: ridgePenalty,
-    cols: (p) => cats.map((c) => ((p.category ?? 'Uncategorised') === c ? 1 : 0)),
+    size: { key: 'size', label: 'size curve, ln TVL', ridge: 0.5, learn: fixed((p) => LN(p.tvl_usd / 1e8)) } as Term,
+    growth: { key: 'growth', label: '7-day TVL growth', ridge: 1, learn: fixed((p) => Math.tanh((p.change_7d ?? 0) / 20)) } as Term,
+    age: { key: 'age', label: 'years listed, ln', ridge: 0.5, learn: fixed((p) => LN(1 + years(p))) } as Term,
+    chains: { key: 'chains', label: 'chain count, ln', ridge: 1, learn: fixed((p) => LN(Math.max(1, p.chains.length))) } as Term,
   };
 }
 
-export function baseTerms(asOf: string): Term[] {
-  return [
-    { key: 'size', label: 'size curve, ln(TVL / $100M)', ridge: 1, cols: (p) => [LN(p.tvl_usd / 1e8)] },
-    { key: 'growth', label: '7-day TVL growth', ridge: 1, cols: (p) => [Math.tanh((p.change_7d ?? 0) / 20)] },
-    { key: 'age', label: 'years listed', ridge: 1, cols: (p) => [Math.min(ageYears(p, asOf) ?? 1.5, 6)] },
-    { key: 'chains', label: 'chain count, ln', ridge: 1, cols: (p) => [LN(Math.max(1, p.chains.length))] },
-  ];
+/** A category's premium on the curve: the mean of y in that category, shrunk toward 0 by k peers. */
+export function categoryPremium(k: number): Term {
+  return {
+    key: 'catprem',
+    label: `category premium (shrunk ${k})`,
+    ridge: 0.5,
+    learn: (train, y) => {
+      const mu = y.reduce((s, v) => s + v, 0) / y.length;
+      const sum: Record<string, number> = {};
+      const n: Record<string, number> = {};
+      train.forEach((p, i) => {
+        sum[catOf(p)] = (sum[catOf(p)] ?? 0) + y[i]! - mu;
+        n[catOf(p)] = (n[catOf(p)] ?? 0) + 1;
+      });
+      const table: Record<string, number> = {};
+      for (const c of Object.keys(sum).sort()) table[c] = r4(sum[c]! / (n[c]! + k));
+      return { col: (p) => table[catOf(p)] ?? 0, table };
+    },
+  };
 }
 
-const design = (ps: Protocol[], terms: Term[]) => ps.map((p) => [1, ...terms.flatMap((t) => t.cols(p))]);
-const penalties = (terms: Term[], ps: Protocol[]) => {
-  const one = ps[0]!;
-  return [0, ...terms.flatMap((t) => t.cols(one).map(() => t.ridge))];
-};
+/** A category's token share: the share of its peers that record a token, shrunk toward the base rate. */
+export function categoryShare(k: number): Term {
+  return {
+    key: 'catshare',
+    label: `category token share (shrunk ${k})`,
+    ridge: 0.5,
+    learn: (train, y) => {
+      const base = y.reduce((s, v) => s + v, 0) / y.length;
+      const tok: Record<string, number> = {};
+      const n: Record<string, number> = {};
+      train.forEach((p, i) => {
+        tok[catOf(p)] = (tok[catOf(p)] ?? 0) + y[i]!;
+        n[catOf(p)] = (n[catOf(p)] ?? 0) + 1;
+      });
+      const table: Record<string, number> = {};
+      for (const c of Object.keys(n).sort()) table[c] = r4(logit((tok[c]! + k * base) / (n[c]! + k)) - logit(base));
+      return { col: (p) => table[catOf(p)] ?? 0, table };
+    },
+  };
+}
 
-// ---------- cap model ----------
+// ---------- one fitted model ----------
+export interface Fitted {
+  encs: Enc[];
+  w: number[];
+  predict: (p: Protocol) => number; // the linear score: log(cap/TVL), or the odds' logit
+}
+
+function fitOn(train: Protocol[], y: number[], terms: Term[], kind: 'ridge' | 'huber' | 'logistic'): Fitted {
+  const encs = terms.map((t) => t.learn(train, y));
+  const X = train.map((p) => [1, ...encs.map((e) => e.col(p))]);
+  const pen = [0, ...terms.map((t) => t.ridge)];
+  const w = kind === 'ridge' ? ridge(X, y, pen) : kind === 'huber' ? huber(X, y, pen) : logistic(X, y, pen);
+  return { encs, w, predict: (p) => dot([1, ...encs.map((e) => e.col(p))], w) };
+}
+
+const bySlug = <T extends Protocol>(ps: T[]) => [...ps].sort((a, b) => (a.slug < b.slug ? -1 : 1));
+/** Earliest-listed 60% train, newer 40% test (unknown dates sort first, as oldest). */
+export function walkSplit<T extends Protocol>(ps: T[], share = 0.6): { train: T[]; test: T[]; cutDate: string } {
+  const key = (p: Protocol) => p.listed_at ?? '0000';
+  const s = [...ps].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : a.slug < b.slug ? -1 : 1));
+  const cut = Math.round(s.length * share);
+  return { train: s.slice(0, cut), test: s.slice(cut), cutDate: s[cut]?.listed_at ?? '' };
+}
+
+// ---------- launch value ----------
 export interface CapStep {
   label: string;
-  loo: number; // held-out miss, as a multiple
+  loo: number;
   wf: number;
+  k10: number;
   kept: boolean | null; // null = baseline
 }
-
 export interface CapModel {
+  loss: CapLoss;
   terms: Term[];
-  w: number[];
+  fit: Fitted;
   steps: CapStep[];
-  loo_residuals: number[];
+  loo_pred: Map<string, number>; // each comparable's blind log(cap/TVL)
   bands: { p10: number; p25: number; p75: number; p90: number };
-  coverage: { in50_loo: number; in80_loo: number; in50_wf: number; in80_wf: number };
+  coverage: { in50_loo: number; in80_loo: number; in3x_loo: number; in50_wf: number; in80_wf: number; in3x_wf: number };
   n: number;
+  n_wf_train: number;
   n_wf_test: number;
-  predictLog: (p: Protocol) => number;
+  wf_cut: string;
 }
 
 const capY = (p: Protocol) => LN(p.mcap_usd! / p.tvl_usd);
-
-function looResiduals(ps: Protocol[], terms: Term[]): number[] {
-  const X = design(ps, terms);
-  const y = ps.map(capY);
-  const pen = penalties(terms, ps);
-  return ps.map((_, i) => {
-    const Xi = X.filter((__, j) => j !== i);
-    const yi = y.filter((__, j) => j !== i);
-    const w = ridge(Xi, yi, pen);
-    return y[i]! - dot(X[i]!, w);
-  });
-}
-
-/** Earlier-listed 60% train, later-listed 40% test (unknown dates sort first, as oldest). */
-function walkSplit<T extends Protocol>(ps: T[]): { train: T[]; test: T[] } {
-  const s = [...ps].sort((a, b) => (a.listed_at ?? '0000') < (b.listed_at ?? '0000') ? -1 : (a.listed_at ?? '0000') > (b.listed_at ?? '0000') ? 1 : a.slug < b.slug ? -1 : 1);
-  const cut = Math.round(s.length * 0.6);
-  return { train: s.slice(0, cut), test: s.slice(cut) };
-}
-
-function wfResiduals(ps: Protocol[], terms: Term[]): number[] {
-  const { train, test } = walkSplit(ps);
-  const w = ridge(design(train, terms), train.map(capY), penalties(terms, train));
-  return test.map((p) => capY(p) - dot([1, ...terms.flatMap((t) => t.cols(p))], w));
-}
-
 const missMultiple = (res: number[]) => r4(Math.exp(median(res.map(Math.abs))));
 
-export function fitCapModel(traded: Protocol[], candidates: Term[]): CapModel {
+function capLoo(ps: Protocol[], terms: Term[], loss: CapLoss): number[] {
+  return ps.map((p, i) => {
+    const tr = ps.filter((_, j) => j !== i);
+    return capY(p) - fitOn(tr, tr.map(capY), terms, loss).predict(p);
+  });
+}
+function capWf(ps: Protocol[], terms: Term[], loss: CapLoss): number[] {
+  const { train, test } = walkSplit(ps);
+  const f = fitOn(train, train.map(capY), terms, loss);
+  return test.map((p) => capY(p) - f.predict(p));
+}
+function capK10(ps: Protocol[], terms: Term[], loss: CapLoss): number[] {
+  const res: number[] = [];
+  for (let f = 0; f < 10; f++) {
+    const tr = ps.filter((_, i) => i % 10 !== f);
+    const fit = fitOn(tr, tr.map(capY), terms, loss);
+    for (const p of ps.filter((_, i) => i % 10 === f)) res.push(capY(p) - fit.predict(p));
+  }
+  return res;
+}
+
+export function fitCapModel(comps: Protocol[], candidates: Term[], loss: CapLoss = 'ridge'): CapModel {
+  const ps = bySlug(comps);
   const steps: CapStep[] = [];
   let kept: Term[] = [];
-  let bestLoo = missMultiple(looResiduals(traded, kept));
-  let bestWf = missMultiple(wfResiduals(traded, kept));
-  steps.push({ label: 'flat median multiple', loo: bestLoo, wf: bestWf, kept: null });
+  let bestLoo = missMultiple(capLoo(ps, kept, loss));
+  let bestWf = missMultiple(capWf(ps, kept, loss));
+  steps.push({ label: 'flat median multiple', loo: bestLoo, wf: bestWf, k10: missMultiple(capK10(ps, kept, loss)), kept: null });
   for (const t of candidates) {
     const trial = [...kept, t];
-    const loo = missMultiple(looResiduals(traded, trial));
-    const wf = missMultiple(wfResiduals(traded, trial));
+    const loo = missMultiple(capLoo(ps, trial, loss));
+    const wf = missMultiple(capWf(ps, trial, loss));
     const keep = loo < bestLoo && wf < bestWf;
-    steps.push({ label: `+ ${t.label}`, loo, wf, kept: keep });
+    steps.push({ label: `+ ${t.label}`, loo, wf, k10: missMultiple(capK10(ps, trial, loss)), kept: keep });
     if (keep) {
       kept = trial;
       bestLoo = loo;
       bestWf = wf;
     }
   }
-  const w = ridge(design(traded, kept), traded.map(capY), penalties(kept, traded));
-  const res = looResiduals(traded, kept);
-  const bands = { p10: quantile(res, 0.1), p25: quantile(res, 0.25), p75: quantile(res, 0.75), p90: quantile(res, 0.9) };
-  const inside = (rs: number[], lo: number, hi: number) => r4(rs.filter((r) => r >= lo && r <= hi).length / rs.length);
-  const wf = wfResiduals(traded, kept);
+  const fit = fitOn(ps, ps.map(capY), kept, loss);
+  const res = capLoo(ps, kept, loss);
+  const wf = capWf(ps, kept, loss);
+  const q = (x: number) => r4(quantile(res, x));
+  const bands = { p10: q(0.1), p25: q(0.25), p75: q(0.75), p90: q(0.9) };
+  const share = (rs: number[], lo: number, hi: number) => r4(rs.filter((r) => r >= lo && r <= hi).length / rs.length);
+  const split = walkSplit(ps);
   return {
+    loss,
     terms: kept,
-    w,
+    fit,
     steps,
-    loo_residuals: res,
-    bands: { p10: r4(bands.p10), p25: r4(bands.p25), p75: r4(bands.p75), p90: r4(bands.p90) },
+    loo_pred: new Map(ps.map((p, i) => [p.slug, capY(p) - res[i]!])),
+    bands,
     coverage: {
-      in50_loo: inside(res, bands.p25, bands.p75),
-      in80_loo: inside(res, bands.p10, bands.p90),
-      in50_wf: inside(wf, bands.p25, bands.p75),
-      in80_wf: inside(wf, bands.p10, bands.p90),
+      in50_loo: share(res, bands.p25, bands.p75),
+      in80_loo: share(res, bands.p10, bands.p90),
+      in3x_loo: share(res, -LN(3), LN(3)),
+      in50_wf: share(wf, bands.p25, bands.p75),
+      in80_wf: share(wf, bands.p10, bands.p90),
+      in3x_wf: share(wf, -LN(3), LN(3)),
     },
-    n: traded.length,
-    n_wf_test: wf.length,
-    predictLog: (p) => dot([1, ...kept.flatMap((t) => t.cols(p))], w),
+    n: ps.length,
+    n_wf_train: split.train.length,
+    n_wf_test: split.test.length,
+    wf_cut: split.cutDate,
   };
 }
 
@@ -236,10 +335,9 @@ export interface OddsStep {
   wf: number; // Brier, walk-forward
   kept: boolean | null;
 }
-
 export interface OddsModel {
   terms: Term[];
-  w: number[];
+  fit: Fitted;
   steps: OddsStep[];
   base_rate: number;
   n: number;
@@ -247,32 +345,30 @@ export interface OddsModel {
   predict: (p: Protocol) => number;
 }
 
-const tokenY = (p: Protocol) => (p.mcap_usd !== null || p.gecko_id !== null || p.symbol !== null ? 1 : 0);
+export const tokenY = (p: Protocol) => (p.mcap_usd !== null || p.gecko_id !== null || p.symbol !== null ? 1 : 0);
 const brier = (ps: number[], ys: number[]) => r4(ps.reduce((s, p, i) => s + (p - ys[i]!) ** 2, 0) / ps.length);
 
 function cvBrier(ps: Protocol[], terms: Term[]): number {
   const preds: number[] = [];
   const ys: number[] = [];
   for (let f = 0; f < 10; f++) {
-    const train = ps.filter((_, i) => i % 10 !== f);
-    const test = ps.filter((_, i) => i % 10 === f);
-    const w = logistic(design(train, terms), train.map(tokenY), penalties(terms, train));
-    for (const p of test) {
-      preds.push(sigmoid(dot([1, ...terms.flatMap((t) => t.cols(p))], w)));
+    const tr = ps.filter((_, i) => i % 10 !== f);
+    const fit = fitOn(tr, tr.map(tokenY), terms, 'logistic');
+    for (const p of ps.filter((_, i) => i % 10 === f)) {
+      preds.push(sigmoid(fit.predict(p)));
       ys.push(tokenY(p));
     }
   }
   return brier(preds, ys);
 }
-
 function wfBrier(ps: Protocol[], terms: Term[]): number {
   const { train, test } = walkSplit(ps);
-  const w = logistic(design(train, terms), train.map(tokenY), penalties(terms, train));
-  return brier(test.map((p) => sigmoid(dot([1, ...terms.flatMap((t) => t.cols(p))], w))), test.map(tokenY));
+  const fit = fitOn(train, train.map(tokenY), terms, 'logistic');
+  return brier(test.map((p) => sigmoid(fit.predict(p))), test.map(tokenY));
 }
 
 export function fitOdds(population: Protocol[], candidates: Term[]): OddsModel {
-  const ps = [...population].sort((a, b) => (a.slug < b.slug ? -1 : 1));
+  const ps = bySlug(population);
   const steps: OddsStep[] = [];
   let kept: Term[] = [];
   let bestCv = cvBrier(ps, kept);
@@ -290,15 +386,49 @@ export function fitOdds(population: Protocol[], candidates: Term[]): OddsModel {
       bestWf = wf;
     }
   }
-  const w = logistic(design(ps, kept), ps.map(tokenY), penalties(kept, ps));
+  const fit = fitOn(ps, ps.map(tokenY), kept, 'logistic');
   const nTok = ps.filter((p) => tokenY(p) === 1).length;
+  return { terms: kept, fit, steps, base_rate: r4(nTok / ps.length), n: ps.length, n_token: nTok, predict: (p) => sigmoid(fit.predict(p)) };
+}
+
+// ---------- bootstrap ----------
+export interface Boot {
+  cap_se: number[]; // standard error of each launch-value coefficient (intercept first)
+  odds_se: number[];
+  rank_lo: number[]; // per board row, in the order given: 5th and 95th percentile rank
+  rank_hi: number[];
+}
+
+/** Refit both models on resampled data B times; rank the board each time by implied value. */
+export function bootstrap(comps: Protocol[], pop: Protocol[], cap: CapModel, odds: OddsModel, board: Protocol[], B = 200, seed = 20261114): Boot {
+  const rand = rng(seed);
+  const C = bySlug(comps);
+  const P = bySlug(pop);
+  const draw = <T>(xs: T[]) => xs.map(() => xs[Math.floor(rand() * xs.length)]!);
+  const capW: number[][] = [];
+  const oddsW: number[][] = [];
+  const ranks: number[][] = board.map(() => []);
+  for (let b = 0; b < B; b++) {
+    const c = draw(C);
+    const o = draw(P);
+    const fc = fitOn(c, c.map(capY), cap.terms, cap.loss);
+    const fo = fitOn(o, o.map(tokenY), odds.terms, 'logistic');
+    capW.push(fc.w);
+    oddsW.push(fo.w);
+    const v = board.map((p) => p.tvl_usd * Math.exp(fc.predict(p)) * sigmoid(fo.predict(p)));
+    const order = v.map((x, i) => [x, i] as const).sort((a, b2) => b2[0] - a[0] || a[1] - b2[1]);
+    order.forEach(([, i], r) => ranks[i]!.push(r + 1));
+  }
+  const se = (ws: number[][]) =>
+    ws[0]!.map((_, j) => {
+      const xs = ws.map((w) => w[j]!);
+      const m = xs.reduce((s, x) => s + x, 0) / xs.length;
+      return r4(Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1)));
+    });
   return {
-    terms: kept,
-    w,
-    steps,
-    base_rate: r4(nTok / ps.length),
-    n: ps.length,
-    n_token: nTok,
-    predict: (p) => sigmoid(dot([1, ...kept.flatMap((t) => t.cols(p))], w)),
+    cap_se: se(capW),
+    odds_se: se(oddsW),
+    rank_lo: ranks.map((r) => Math.round(quantile(r, 0.05))),
+    rank_hi: ranks.map((r) => Math.round(quantile(r, 0.95))),
   };
 }

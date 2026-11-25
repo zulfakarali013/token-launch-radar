@@ -1,179 +1,166 @@
-// Token Launch Radar: farm plans.
+// Token Launch Radar v3: farm plans.
 //
-// Every board row gets 5 to 7 concrete steps, each naming what it costs and how long it takes. The
-// plan is built from the row's own figures: its category picks the action, its chains set the gas
-// bill, its TVL sizes a sensible position, its 7-day change sets the urgency, and its days without a
-// token set how long to stay in.
+// Every board row gets an 8-step plan on a timeline (Day 0, weekly, any day, the exit day, the
+// budget), and every step names its cost in dollars and its time in minutes, so the plan adds up to
+// one bill and one number of hands-on hours. The plan is built from the row's own record: its category
+// picks the action, its cheapest listed chain sets the gas, its TVL sizes the deposit and sets the
+// exit line, its days without a token set the hold, and the verdict (lib/verdict.ts) prices it.
 
 import type { Protocol, Valuation } from './model.ts';
 
 export interface FarmStep {
+  when: string;
   text: string;
-  cost: string;
-  time: string;
+  cost_usd: number;
+  minutes: number;
 }
 
-/** Rough cost of one transaction on the protocol's cheapest listed chain, in US dollars. */
+/** Typical cost of one transaction on a chain, in US dollars (low end, high end). */
 const GAS_USD: Record<string, [number, number]> = {
-  Ethereum: [2, 12],
-  Bitcoin: [1, 6],
-  Solana: [0.01, 0.05],
-  Arbitrum: [0.05, 0.3],
-  Base: [0.02, 0.2],
-  Optimism: [0.05, 0.3],
-  BSC: [0.05, 0.3],
-  Polygon: [0.01, 0.1],
-  Avalanche: [0.05, 0.4],
-  Sui: [0.01, 0.05],
-  Aptos: [0.01, 0.05],
-  Hyperliquid: [0.01, 0.1],
-  'Hyperliquid L1': [0.01, 0.1],
-  TON: [0.02, 0.1],
+  Ethereum: [1.5, 6],
+  Bitcoin: [1, 4],
+  Solana: [0.005, 0.03],
+  Arbitrum: [0.03, 0.2],
+  Base: [0.02, 0.1],
+  Optimism: [0.03, 0.2],
+  BSC: [0.05, 0.2],
+  Binance: [0.05, 0.2],
+  Mantle: [0.01, 0.05],
+  Starknet: [0.02, 0.1],
+  'zkSync Era': [0.03, 0.15],
+  Polygon: [0.01, 0.05],
+  Avalanche: [0.05, 0.3],
+  Sui: [0.01, 0.04],
+  Aptos: [0.01, 0.04],
+  'Hyperliquid L1': [0.01, 0.05],
+  TON: [0.02, 0.08],
   Tron: [0.5, 2],
 };
-const OTHER_GAS: [number, number] = [0.05, 0.5];
+const OTHER_GAS: [number, number] = [0.05, 0.4];
+const gasMid = (g: [number, number]) => Math.round(((g[0] + g[1]) / 2) * 1000) / 1000;
 
-export function cheapestChain(chains: string[]): { chain: string; gas: [number, number] } {
-  let best = { chain: chains[0] ?? 'Ethereum', gas: GAS_USD[chains[0] ?? 'Ethereum'] ?? OTHER_GAS };
-  for (const c of chains) {
-    const g = GAS_USD[c] ?? OTHER_GAS;
-    if (g[1] < best.gas[1]) best = { chain: c, gas: g };
+export function cheapestChain(chains: string[]): { chain: string; gas_tx_usd: number } {
+  const list = chains.length ? chains : ['Ethereum'];
+  let best = { chain: list[0]!, gas_tx_usd: gasMid(GAS_USD[list[0]!] ?? OTHER_GAS) };
+  for (const c of list) {
+    const g = gasMid(GAS_USD[c] ?? OTHER_GAS);
+    if (g < best.gas_tx_usd) best = { chain: c, gas_tx_usd: g };
   }
   return best;
 }
 
-const usd = (x: number) => (x >= 100 ? `$${Math.round(x).toLocaleString('en-US')}` : `$${x.toFixed(2)}`);
-const gasRange = (g: [number, number], txs: number) => `${usd(g[0] * txs)}-${usd(g[1] * txs)} gas`;
-
-type Action = { verb: string; what: string; txs: number; feePct: number; risk: string };
+type Action = { verb: string; what: string; txs: number; fee_pct: number; risk: string };
 
 function actionFor(category: string | null): Action {
   switch (category) {
     case 'Dexs':
-      return { verb: 'Provide liquidity', what: 'provide liquidity to a deep stable or blue-chip pool and swap through it weekly', txs: 3, feePct: 0.3, risk: 'impermanent loss on volatile pairs' };
+    case 'DEX Aggregator':
+      return { verb: 'Provide liquidity and swap', what: 'add liquidity to its deepest stablecoin pool and swap through it once', txs: 3, fee_pct: 0.1, risk: 'the pool losing its peg' };
     case 'Derivatives':
     case 'Interest Rate Derivatives':
     case 'Prediction Market':
-      return { verb: 'Trade small size', what: 'trade small size with tight stops, and keep a little collateral in its vault or LP pool', txs: 4, feePct: 0.1, risk: 'liquidation and trading fees outrunning points' };
+    case 'Options':
+      return { verb: 'Trade small and keep collateral in', what: 'deposit into its liquidity vault and place one small, hedged trade', txs: 4, fee_pct: 0.1, risk: 'liquidation or vault losses' };
     case 'Lending':
     case 'Uncollateralized Lending':
     case 'Collateral Markets':
+      return { verb: 'Supply and borrow', what: 'supply a stablecoin and borrow a little against it (loan-to-value under 30%)', txs: 3, fee_pct: 0, risk: 'bad debt or a collateral depeg' };
     case 'CDP':
     case 'CDP Manager':
-      return { verb: 'Supply', what: 'supply a stablecoin and borrow modestly against it (keep the loan-to-value under 40%)', txs: 3, feePct: 0, risk: 'bad debt or a collateral depeg' };
-    case 'Liquid Staking':
-    case 'Liquid Restaking':
-    case 'Restaking':
-    case 'Restaked BTC':
-    case 'Staking Pool':
-      return { verb: 'Stake', what: 'stake the native asset and hold the receipt token rather than selling it', txs: 2, feePct: 0, risk: 'slashing or a receipt-token discount' };
-    case 'Bridge':
-    case 'Cross Chain Bridge':
-      return { verb: 'Bridge', what: 'bridge across two of its routes, there and back, a few times a month', txs: 4, feePct: 0.05, risk: 'a bridge exploit' };
+      return { verb: 'Mint against collateral', what: 'open a vault, post collateral and mint a little of its stablecoin (collateral ratio over 250%)', txs: 3, fee_pct: 0, risk: 'liquidation or a depeg' };
     case 'RWA':
     case 'Basis Trading':
     case 'Dual-Token Stablecoin':
     case 'Stablecoin Wrapper':
-      return { verb: 'Mint or deposit', what: 'mint or deposit into its yield-bearing dollar and hold it, or loop it once where a lending market lists it', txs: 3, feePct: 0.1, risk: 'a depeg or a redemption queue' };
+    case 'Synthetics':
+      return { verb: 'Mint its yield-bearing dollar', what: 'mint or buy its yield-bearing dollar with USDC and stake it in its own contract', txs: 3, fee_pct: 0.1, risk: 'a depeg or a redemption queue' };
+    case 'Liquidity Manager':
+    case 'Leveraged Farming':
+      return { verb: 'Deposit into a managed vault', what: 'deposit into its largest stablecoin or blue-chip vault and leave the manager to rebalance it', txs: 3, fee_pct: 0.1, risk: 'a rebalance loss or a depeg' };
+    case 'Yield':
+    case 'Yield Aggregator':
+    case 'Risk Curators':
+    case 'Onchain Capital Allocator':
+      return { verb: 'Deposit into a vault', what: 'deposit USDC into its largest stablecoin vault and leave it compounding', txs: 2, fee_pct: 0, risk: 'a curator loss or a withdrawal queue' };
     default:
-      return { verb: 'Deposit', what: 'deposit into its main vault and leave it compounding', txs: 2, feePct: 0, risk: 'smart-contract risk in a young vault' };
+      return { verb: 'Use it', what: 'deposit into its main product and leave it working', txs: 2, fee_pct: 0, risk: 'smart-contract risk in a young product' };
   }
 }
 
+export const PLAN = {
+  deposit_share_of_tvl: 0.0005, // the plan's own deposit: 0.05% of TVL...
+  deposit_min_usd: 1_000, // ...never under $1,000...
+  deposit_max_usd: 25_000, // ...never over $25,000
+  exit_drawdown: 0.3, // leave if TVL falls 30% below the snapshot
+  weekly_minutes: 5,
+};
+
 export interface PlanSummary {
-  capital_usd: number;
-  setup_minutes: number;
-  gas_low_usd: number;
-  gas_high_usd: number;
-  hold_weeks: number;
+  deposit_usd: number;
   chain: string;
+  gas_tx_usd: number;
+  setup_txs: number; // fund, test, enter
+  exit_txs: number;
+  weeks: number;
+  setup_minutes: number; // every minute that is not weekly
+  fee_pct: number; // swap and mint fees, of the deposit, in and out
+  verb: string;
 }
 
-/** The whole plan at a glance: capital, setup time, total gas over the hold, and how long to stay. */
+export function depositFor(p: Protocol): number {
+  return Math.max(PLAN.deposit_min_usd, Math.min(PLAN.deposit_max_usd, Math.round((p.tvl_usd * PLAN.deposit_share_of_tvl) / 500) * 500));
+}
+
+export function holdWeeks(v: Valuation): number {
+  const d = v.days_without_token;
+  return d === null ? 12 : d > 730 ? 8 : d > 365 ? 12 : d > 120 ? 16 : 20;
+}
+
+const STEP_MIN = { verify: 20, fund: 15, enter: 25, register: 10, exit_rule: 5, exit: 20 };
+
 export function planSummary(p: Protocol, v: Valuation): PlanSummary {
-  const { chain, gas } = cheapestChain(p.chains);
+  const { chain, gas_tx_usd } = cheapestChain(p.chains);
   const a = actionFor(p.category);
-  const size = positionSize(p);
-  const hold = holdWeeks(v);
-  const extra = p.chains.length > 1 ? (GAS_USD[p.chains.find((c) => c !== chain) ?? chain] ?? OTHER_GAS) : ([0, 0] as [number, number]);
-  const txs = 1 + a.txs + hold + 2; // fund, enter, one interaction a week, exit
-  const xtxs = p.chains.length > 1 ? a.txs + 1 : 0;
   return {
-    capital_usd: size + (p.chains.length > 1 ? size / 4 : 0),
-    setup_minutes: 15 + 20 + 10 + (p.chains.length > 1 ? 20 : 0),
-    gas_low_usd: Math.round((gas[0] * txs + extra[0] * xtxs) * 100) / 100,
-    gas_high_usd: Math.round((gas[1] * txs + extra[1] * xtxs) * 100) / 100,
-    hold_weeks: hold,
+    deposit_usd: depositFor(p),
     chain,
+    gas_tx_usd,
+    setup_txs: 1 + 2 + a.txs,
+    exit_txs: 2,
+    weeks: holdWeeks(v),
+    setup_minutes: STEP_MIN.verify + STEP_MIN.fund + STEP_MIN.enter + STEP_MIN.register + STEP_MIN.exit_rule + STEP_MIN.exit,
+    fee_pct: a.fee_pct,
+    verb: a.verb,
   };
 }
 
-function positionSize(p: Protocol): number {
-  return Math.max(1_000, Math.min(10_000, Math.round((p.tvl_usd * 0.001) / 100) * 100));
-}
+const usd = (x: number) => (Math.abs(x) >= 100 ? `$${Math.round(x).toLocaleString('en-US')}` : `$${x.toFixed(2)}`);
+const big = (x: number) => (x >= 1e9 ? `$${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? `$${(x / 1e6).toFixed(1)}M` : `$${Math.round(x / 1e3)}K`);
+const r2 = (x: number) => Math.round(x * 100) / 100;
 
-function holdWeeks(v: Valuation): number {
-  const d = v.days_without_token;
-  return d === null ? 8 : d > 540 ? 6 : d > 180 ? 10 : 14;
-}
-
-export function farmPlan(p: Protocol, v: Valuation): FarmStep[] {
-  const { chain, gas } = cheapestChain(p.chains);
+/** The plan, step by step; `net` is the verdict's figure for the plan's own deposit, share and hold. */
+export function farmPlan(p: Protocol, v: Valuation, s: PlanSummary, net: { drop_usd: number; cost_usd: number; net_usd: number; hours: number; per_hour_usd: number; call: string }): FarmStep[] {
   const a = actionFor(p.category);
-  // Position: big enough to register, small against the pool (never more than 0.1% of TVL, $1,000..$10,000).
-  const size = positionSize(p);
-  const hot = (p.change_7d ?? 0) >= 10;
-  const cold = (p.change_7d ?? 0) <= -10;
+  const g = s.gas_tx_usd;
+  const d = s.deposit_usd;
+  const fee = (d * a.fee_pct) / 100;
+  const exitLine = p.tvl_usd * (1 - PLAN.exit_drawdown);
   const days = v.days_without_token;
-  const weeks = holdWeeks(v);
-  const steps: FarmStep[] = [];
-
-  steps.push({
-    text: `Open the official ${p.name} app from its DefiLlama listing (never a search ad), connect a fresh wallet on ${chain}, and fund it with ${usd(size)} in stablecoins plus gas.`,
-    cost: `${gasRange(gas, 1)} to fund the wallet`,
-    time: '15 min',
-  });
-  steps.push({
-    text: `Put ${usd(size)} to work on ${chain}: ${a.what}.`,
-    cost: `${gasRange(gas, a.txs)}${a.feePct ? `, ~${usd((size * a.feePct) / 100)} in fees` : ''}`,
-    time: '20 min',
-  });
-  steps.push({
-    text: `Check its docs or app for a points, XP or season page and register for it, adding a referral code from its official channels only; screenshot your balance so the snapshot can be checked later.`,
-    cost: 'free (a signature, no gas)',
-    time: '10 min',
-  });
-  if (p.chains.length > 1) {
-    const second = p.chains.find((c) => c !== chain) ?? chain;
-    steps.push({
-      text: `Repeat a smaller position (about ${usd(size / 4)}) on ${second}: many launches reward use across several of a protocol's ${p.chains.length} chains.`,
-      cost: gasRange(GAS_USD[second] ?? OTHER_GAS, a.txs + 1),
-      time: '20 min',
-    });
-  }
-  steps.push({
-    text: hot
-      ? `TVL rose ${p.change_7d!.toFixed(1)}% in 7 days, so the queue is forming now: top up within the week and interact at least twice a week.`
-      : cold
-        ? `TVL fell ${Math.abs(p.change_7d!).toFixed(1)}% in 7 days: enter at half size first and add the rest only once the outflow stops for a week.`
-        : `Interact once a week (a claim, a compound or a small top-up) so the wallet shows steady activity rather than one deposit.`,
-    cost: `${gasRange(gas, 1)} a week`,
-    time: '5 min a week',
-  });
-  steps.push({
-    text: `Hold the position for at least ${weeks} weeks; ${days === null ? 'DefiLlama records no listing date' : `it has run ${days} days with no token recorded`}, so plan for the season to last at least that long.`,
-    cost: `capital locked: ${usd(size)}`,
-    time: `${weeks} weeks`,
-  });
-  steps.push({
-    text: `Set an exit rule before you need it: withdraw if TVL drops 30% in a week, the team announces no token, or you see signs of ${a.risk}; a token is never guaranteed.`,
-    cost: `${gasRange(gas, 2)} to exit`,
-    time: '10 min',
-  });
-  return steps;
+  const trend = (p.change_7d ?? 0) <= -10 ? ` TVL fell ${Math.abs(p.change_7d!).toFixed(1)}% this week, so enter half now and the rest after a flat week.` : (p.change_7d ?? 0) >= 10 ? ` TVL rose ${p.change_7d!.toFixed(1)}% this week: the queue is forming, enter now.` : '';
+  return [
+    { when: 'Day 0', text: `Verify before funding: open ${p.name} from its DefiLlama page (never a search ad), confirm TVL near ${big(p.tvl_usd)} and that it still records no token, then read its audit and withdrawal terms.`, cost_usd: 0, minutes: STEP_MIN.verify },
+    { when: 'Day 0', text: `Fund a wallet used for nothing else on ${s.chain} (its cheapest listed chain) with ${usd(d)} of USDC plus gas, withdrawn from an exchange (1 transaction).`, cost_usd: r2(g), minutes: STEP_MIN.fund },
+    { when: 'Day 0', text: `${a.verb}: put a $50 test through and take it back, then ${a.what} with ${usd(d)} (${a.txs + 2} transactions${a.fee_pct ? `, ${a.fee_pct}% in fees` : ''}).${trend}`, cost_usd: r2(g * (a.txs + 2) + fee), minutes: STEP_MIN.enter },
+    { when: 'Day 1', text: `Register the wallet on its points or rewards page if it has one and note the balance; a stake the page does not show is not counted.`, cost_usd: 0, minutes: STEP_MIN.register },
+    { when: `Weekly x${s.weeks}`, text: `Once a week for ${s.weeks} weeks make one small transaction (claim, compound or top up) and log the balance and its TVL, so the wallet shows steady use rather than one deposit.`, cost_usd: r2(g * s.weeks), minutes: PLAN.weekly_minutes * s.weeks },
+    { when: 'Any day', text: `Exit rule: withdraw if TVL falls under ${big(exitLine)} (30% below the snapshot), withdrawals pause, there are signs of ${a.risk}, or a token is announced with nothing for depositors. Claim only from a link ${p.name} itself publishes.`, cost_usd: 0, minutes: STEP_MIN.exit_rule },
+    { when: `Day ${s.weeks * 7}`, text: `Exit: withdraw and send the USDC back to the exchange (2 transactions${a.fee_pct ? `, ${a.fee_pct}% in fees` : ''}); ${days === null ? 'it has no listing date' : `by then it will have gone ${days + s.weeks * 7} days without a token`}, so re-check before staying longer.`, cost_usd: r2(g * 2 + fee), minutes: STEP_MIN.exit },
+    { when: 'Budget', text: `${usd(net.cost_usd)} of gas, fees and forgone 4% T-bill on ${usd(d)} for ${s.weeks} weeks, against a modelled drop of ${usd(net.drop_usd)}: net ${net.net_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.net_usd))}, ${net.per_hour_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.per_hour_usd))} an hour over ${net.hours.toFixed(1)} h: ${net.call}.`, cost_usd: 0, minutes: 0 },
+  ];
 }
 
-/** The gate's string form of a step: action, then cost and time. */
+/** The gate's string form of a step: when, action, then cost and time. */
 export function stepString(s: FarmStep): string {
-  return `${s.text} Cost: ${s.cost}. Time: ${s.time}.`;
+  const t = s.minutes >= 60 ? `${(s.minutes / 60).toFixed(1)} h` : `${s.minutes} min`;
+  return s.when === 'Budget' ? `Budget: ${s.text}` : `${s.when}: ${s.text} Cost: ${usd(s.cost_usd)}. Time: ${t}.`;
 }
