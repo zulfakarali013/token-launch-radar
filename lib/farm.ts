@@ -1,12 +1,13 @@
-// Token Launch Radar v3: farm plans.
+// Token Launch Radar v4: farm plans.
 //
-// Every board row gets an 8-step plan on a timeline (Day 0, weekly, any day, the exit day, the
-// budget), and every step names its cost in dollars and its time in minutes, so the plan adds up to
+// Every board row gets a 10-step plan on a timeline (Day 0, weekly, any day, on a launch, the exit
+// day) and a budget line, and every step names its cost in dollars and its time in minutes, so the plan adds up to
 // one bill and one number of hands-on hours. The plan is built from the row's own record: its category
 // picks the action, its cheapest listed chain sets the gas, its TVL sizes the deposit and sets the
 // exit line, its days without a token set the hold, and the verdict (lib/verdict.ts) prices it.
 
 import type { Protocol, Valuation } from './model.ts';
+import { VERDICT } from './verdict.ts';
 
 export interface FarmStep {
   when: string;
@@ -116,7 +117,7 @@ export function holdWeeks(v: Valuation): number {
   return d === null ? 12 : d > 730 ? 8 : d > 365 ? 12 : d > 120 ? 16 : 20;
 }
 
-const STEP_MIN = { verify: 20, fund: 15, enter: 25, register: 10, exit_rule: 5, exit: 20 };
+const STEP_MIN = { verify: 20, risk: 10, fund: 15, enter: 25, ledger: 5, register: 10, exit_rule: 5, claim: 10, exit: 20 };
 
 export function planSummary(p: Protocol, v: Valuation): PlanSummary {
   const { chain, gas_tx_usd } = cheapestChain(p.chains);
@@ -126,9 +127,9 @@ export function planSummary(p: Protocol, v: Valuation): PlanSummary {
     chain,
     gas_tx_usd,
     setup_txs: 1 + 2 + a.txs,
-    exit_txs: 2,
+    exit_txs: 3, // claim, withdraw, send back
     weeks: holdWeeks(v),
-    setup_minutes: STEP_MIN.verify + STEP_MIN.fund + STEP_MIN.enter + STEP_MIN.register + STEP_MIN.exit_rule + STEP_MIN.exit,
+    setup_minutes: STEP_MIN.verify + STEP_MIN.risk + STEP_MIN.fund + STEP_MIN.enter + STEP_MIN.ledger + STEP_MIN.register + STEP_MIN.exit_rule + STEP_MIN.claim + STEP_MIN.exit,
     fee_pct: a.fee_pct,
     verb: a.verb,
   };
@@ -139,7 +140,7 @@ const big = (x: number) => (x >= 1e9 ? `$${(x / 1e9).toFixed(2)}B` : x >= 1e6 ? 
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 /** The plan, step by step; `net` is the verdict's figure for the plan's own deposit, share and hold. */
-export function farmPlan(p: Protocol, v: Valuation, s: PlanSummary, net: { drop_usd: number; cost_usd: number; net_usd: number; hours: number; per_hour_usd: number; call: string }): FarmStep[] {
+export function farmPlan(p: Protocol, v: Valuation, s: PlanSummary, net: { drop_usd: number; cost_usd: number; net_usd: number; tbill_usd: number; beat_usd: number; hours: number; per_hour_usd: number; call: string }): FarmStep[] {
   const a = actionFor(p.category);
   const g = s.gas_tx_usd;
   const d = s.deposit_usd;
@@ -149,13 +150,16 @@ export function farmPlan(p: Protocol, v: Valuation, s: PlanSummary, net: { drop_
   const trend = (p.change_7d ?? 0) <= -10 ? ` TVL fell ${Math.abs(p.change_7d!).toFixed(1)}% this week, so enter half now and the rest after a flat week.` : (p.change_7d ?? 0) >= 10 ? ` TVL rose ${p.change_7d!.toFixed(1)}% this week: the queue is forming, enter now.` : '';
   return [
     { when: 'Day 0', text: `Verify before funding: open ${p.name} from its DefiLlama page (never a search ad), confirm TVL near ${big(p.tvl_usd)} and that it still records no token, then read its audit and withdrawal terms.`, cost_usd: 0, minutes: STEP_MIN.verify },
+    { when: 'Day 0', text: `Risk check: find what backs ${p.name}'s ${p.category ?? 'product'} position (collateral, strategy or counterparty), who can pause withdrawals, and how long a withdrawal takes; skip it if any of the three is not written down.`, cost_usd: 0, minutes: STEP_MIN.risk },
     { when: 'Day 0', text: `Fund a wallet used for nothing else on ${s.chain} (its cheapest listed chain) with ${usd(d)} of USDC plus gas, withdrawn from an exchange (1 transaction).`, cost_usd: r2(g), minutes: STEP_MIN.fund },
     { when: 'Day 0', text: `${a.verb}: put a $50 test through and take it back, then ${a.what} with ${usd(d)} (${a.txs + 2} transactions${a.fee_pct ? `, ${a.fee_pct}% in fees` : ''}).${trend}`, cost_usd: r2(g * (a.txs + 2) + fee), minutes: STEP_MIN.enter },
+    { when: 'Day 0', text: `Start a ledger: date, transaction hash, asset, amount and dollar value of the ${usd(d)} deposit and of every later step; a claim may ask the wallet to prove its history, and a drop is taxable in many places on the day it arrives.`, cost_usd: 0, minutes: STEP_MIN.ledger },
     { when: 'Day 1', text: `Register the wallet on its points or rewards page if it has one and note the balance; a stake the page does not show is not counted.`, cost_usd: 0, minutes: STEP_MIN.register },
     { when: `Weekly x${s.weeks}`, text: `Once a week for ${s.weeks} weeks make one small transaction (claim, compound or top up) and log the balance and its TVL, so the wallet shows steady use rather than one deposit.`, cost_usd: r2(g * s.weeks), minutes: PLAN.weekly_minutes * s.weeks },
-    { when: 'Any day', text: `Exit rule: withdraw if TVL falls under ${big(exitLine)} (30% below the snapshot), withdrawals pause, there are signs of ${a.risk}, or a token is announced with nothing for depositors. Claim only from a link ${p.name} itself publishes.`, cost_usd: 0, minutes: STEP_MIN.exit_rule },
-    { when: `Day ${s.weeks * 7}`, text: `Exit: withdraw and send the USDC back to the exchange (2 transactions${a.fee_pct ? `, ${a.fee_pct}% in fees` : ''}); ${days === null ? 'it has no listing date' : `by then it will have gone ${days + s.weeks * 7} days without a token`}, so re-check before staying longer.`, cost_usd: r2(g * 2 + fee), minutes: STEP_MIN.exit },
-    { when: 'Budget', text: `${usd(net.cost_usd)} of gas, fees and forgone 4% T-bill on ${usd(d)} for ${s.weeks} weeks, against a modelled drop of ${usd(net.drop_usd)}: net ${net.net_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.net_usd))}, ${net.per_hour_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.per_hour_usd))} an hour over ${net.hours.toFixed(1)} h: ${net.call}.`, cost_usd: 0, minutes: 0 },
+    { when: 'Any day', text: `Exit rule: withdraw if TVL falls under ${big(exitLine)} (30% below the snapshot), withdrawals pause, there are signs of ${a.risk}, or a token is announced with nothing for depositors.`, cost_usd: 0, minutes: STEP_MIN.exit_rule },
+    { when: 'On a launch', text: `If ${p.name} announces a token, claim only from a link it publishes itself, in one transaction, then decide the same day: sell enough to cover the ${usd(net.cost_usd)} spent, and hold the rest only by choice.`, cost_usd: r2(g), minutes: STEP_MIN.claim },
+    { when: `Day ${s.weeks * 7}`, text: `Exit: withdraw and send the USDC back to the exchange (2 transactions${a.fee_pct ? `, ${a.fee_pct}% in fees` : ''}, plus ${VERDICT.base_fee_rate * 100}% slippage and withdrawal fees); ${days === null ? 'it has no listing date' : `by then it will have gone ${days + s.weeks * 7} days without a token`}, so re-check before staying longer.`, cost_usd: r2(g * 2 + fee + d * VERDICT.base_fee_rate), minutes: STEP_MIN.exit },
+    { when: 'Budget', text: `${usd(net.cost_usd)} of gas and fees on ${usd(d)} for ${s.weeks} weeks, against a modelled drop of ${usd(net.drop_usd)}: net ${net.net_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.net_usd))}, ${net.per_hour_usd >= 0 ? '+' : '-'}${usd(Math.abs(net.per_hour_usd))} an hour over ${net.hours.toFixed(1)} h; the same money in a 4% T-bill earns ${usd(net.tbill_usd)}, so farming ${net.beat_usd >= 0 ? 'beats it by' : 'trails it by'} ${usd(Math.abs(net.beat_usd))}: ${net.call}.`, cost_usd: 0, minutes: 0 },
   ];
 }
 

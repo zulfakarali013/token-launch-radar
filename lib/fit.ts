@@ -1,4 +1,4 @@
-// Token Launch Radar v3: fitted, held-out-tested models.
+// Token Launch Radar v6: fitted, held-out-tested models.
 //
 // Two models, both fitted on this snapshot alone and both tested on protocols they did not see.
 //
@@ -12,8 +12,9 @@
 //     absolute miss in log space, printed as a multiple (x2.5 = off by 2.5 times either way).
 //
 //  2. Token odds. A logistic regression of "records a token" over every stand-alone protocol with a
-//     listing date, scored by the Brier score against the base rate, with the same rule (10-fold and
-//     walk-forward must both improve).
+//     listing date, scored by the Brier score against the base rate. Its terms are searched without a
+//     fixed order: each round adds the term that lowers the Brier score most among those that lower it
+//     in BOTH 10-fold and walk-forward; one candidate is the token share of a protocol's nearest peers.
 //
 // A term that is itself learned from the data (a category's premium, a category's token share) is
 // learned inside each training split only, so no protocol ever helps price itself. The ranges come
@@ -145,6 +146,8 @@ export function logistic(X: Vec[], y: number[], penalty: number[], iters = 30): 
 export interface Enc {
   col: (p: Protocol) => number;
   table?: Record<string, number>;
+  peers?: [number, number, number, string][]; // the nearest-peer term's training points: x, z, token (0/1), slug
+  base?: number;
 }
 /** A candidate term. `learn` sees only the training split (and its targets). */
 export interface Term {
@@ -165,6 +168,15 @@ export function recordTerms(asOf: string) {
     growth: { key: 'growth', label: '7-day TVL growth', ridge: 1, learn: fixed((p) => Math.tanh((p.change_7d ?? 0) / 20)) } as Term,
     age: { key: 'age', label: 'years listed, ln', ridge: 0.5, learn: fixed((p) => LN(1 + years(p))) } as Term,
     chains: { key: 'chains', label: 'chain count, ln', ridge: 1, learn: fixed((p) => LN(Math.max(1, p.chains.length))) } as Term,
+    // second-order and shape terms: each must earn its place in both blind tests like the rest
+    size2: { key: 'size2', label: 'size curve, squared', ridge: 1, learn: fixed((p) => LN(p.tvl_usd / 1e8) ** 2) } as Term,
+    agesize: { key: 'agesize', label: 'years listed x size', ridge: 1, learn: fixed((p) => LN(1 + years(p)) * LN(p.tvl_usd / 1e8)) } as Term,
+    age2: { key: 'age2', label: 'years listed, squared', ridge: 1, learn: fixed((p) => LN(1 + years(p)) ** 2) } as Term,
+    multi: { key: 'multi', label: 'on 3 or more chains', ridge: 1, learn: fixed((p) => (p.chains.length >= 3 ? 1 : 0)) } as Term,
+    swing: { key: 'swing', label: 'size of the 7-day move, either way', ridge: 1, learn: fixed((p) => Math.tanh(Math.abs(p.change_7d ?? 0) / 20)) } as Term,
+    eth: { key: 'eth', label: 'listed on Ethereum', ridge: 1, learn: fixed((p) => (p.chains.includes('Ethereum') ? 1 : 0)) } as Term,
+    young: { key: 'young', label: 'listed under a year', ridge: 1, learn: fixed((p) => (years(p) < 1 ? 1 : 0)) } as Term,
+    sizeg: { key: 'sizeg', label: 'size x 7-day growth', ridge: 1, learn: fixed((p) => LN(p.tvl_usd / 1e8) * Math.tanh((p.change_7d ?? 0) / 20)) } as Term,
   };
 }
 
@@ -210,6 +222,43 @@ export function categoryShare(k: number): Term {
   };
 }
 
+/** Where a protocol sits among its peers for the nearest-peer term: ln TVL over 2, ln(1 + years) over 0.5. */
+export function peerPoint(p: Protocol, asOf: string): [number, number] {
+  return [LN(p.tvl_usd / 1e8) / 2, LN(1 + (ageYears(p, asOf) ?? 1.5)) / 0.5];
+}
+/**
+ * The token share of a protocol's k nearest peers by size and years listed (learned inside the
+ * training split; a training row never counts itself), shrunk toward the base rate by two peers,
+ * as a logit gap to the base rate. Ties in distance break by slug, so the page can repeat it exactly.
+ */
+export function nearestPeers(k: number, asOf: string): Term {
+  return {
+    key: 'knn',
+    label: `token share of the ${k} nearest peers`,
+    ridge: 1,
+    learn: (train, y) => {
+      const base = y.reduce((s, v) => s + v, 0) / y.length;
+      const P = train.map((p) => peerPoint(p, asOf));
+      const peers = train.map((p, i) => [r4(P[i]![0]), r4(P[i]![1]), y[i]!, p.slug] as [number, number, number, string]);
+      return {
+        col: (p) => knnShare(peers, peerPoint(p, asOf), p.slug, k, base),
+        peers,
+        base,
+      } as Enc;
+    },
+  };
+}
+export function knnShare(peers: [number, number, number, string][], q: [number, number], slug: string, k: number, base: number): number {
+  const x = r4(q[0]), z = r4(q[1]);
+  const d = peers
+    .filter((v) => v[3] !== slug)
+    .map((v) => [(v[0] - x) ** 2 + (v[1] - z) ** 2, v[2], v[3]] as [number, number, string])
+    .sort((a, b) => a[0] - b[0] || (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0))
+    .slice(0, k);
+  const share = (d.reduce((s, v) => s + v[1], 0) + 2 * base) / (k + 2);
+  return logit(share) - logit(base);
+}
+
 // ---------- one fitted model ----------
 export interface Fitted {
   encs: Enc[];
@@ -249,7 +298,8 @@ export interface CapModel {
   steps: CapStep[];
   loo_pred: Map<string, number>; // each comparable's blind log(cap/TVL)
   bands: { p10: number; p25: number; p75: number; p90: number };
-  coverage: { in50_loo: number; in80_loo: number; in3x_loo: number; in50_wf: number; in80_wf: number; in3x_wf: number };
+  coverage: { in50_loo: number; in80_loo: number; in3x_loo: number; in50_wf: number; in80_wf: number; in3x_wf: number; in50_fresh: number; in80_fresh: number; in50_older: number; in80_older: number };
+  fresh_bands: { p10: number; p25: number; p75: number; p90: number };
   n: number;
   n_wf_train: number;
   n_wf_test: number;
@@ -302,10 +352,19 @@ export function fitCapModel(comps: Protocol[], candidates: Term[], loss: CapLoss
   const fit = fitOn(ps, ps.map(capY), kept, loss);
   const res = capLoo(ps, kept, loss);
   const wf = capWf(ps, kept, loss);
-  const q = (x: number) => r4(quantile(res, x));
+  // The band is read off the misses of BOTH blind tests pooled (left-out and walk-forward), so it is
+  // as wide as the newer tokens need, not only the older ones; each test's own coverage is printed.
+  const pooled = [...res, ...wf];
+  const q = (x: number) => r4(quantile(pooled, x));
   const bands = { p10: q(0.1), p25: q(0.25), p75: q(0.75), p90: q(0.9) };
   const share = (rs: number[], lo: number, hi: number) => r4(rs.filter((r) => r >= lo && r <= hi).length / rs.length);
   const split = walkSplit(ps);
+  // A fresh test of the band: read it off the older tokens only (each priced, left out, by a fit on
+  // the older tokens alone), then count how many newer tokens' walk-forward misses fall inside it.
+  // No newer token touches that band, so this coverage is out of sample in time.
+  const older = capLoo(split.train, kept, loss);
+  const qo = (x: number) => r4(quantile(older, x));
+  const fresh_bands = { p10: qo(0.1), p25: qo(0.25), p75: qo(0.75), p90: qo(0.9) };
   return {
     loss,
     terms: kept,
@@ -320,7 +379,12 @@ export function fitCapModel(comps: Protocol[], candidates: Term[], loss: CapLoss
       in50_wf: share(wf, bands.p25, bands.p75),
       in80_wf: share(wf, bands.p10, bands.p90),
       in3x_wf: share(wf, -LN(3), LN(3)),
+      in50_fresh: share(wf, fresh_bands.p25, fresh_bands.p75),
+      in80_fresh: share(wf, fresh_bands.p10, fresh_bands.p90),
+      in50_older: share(older, fresh_bands.p25, fresh_bands.p75),
+      in80_older: share(older, fresh_bands.p10, fresh_bands.p90),
     },
+    fresh_bands,
     n: ps.length,
     n_wf_train: split.train.length,
     n_wf_test: split.test.length,
@@ -368,23 +432,32 @@ function wfBrier(ps: Protocol[], terms: Term[]): number {
 }
 
 export function fitOdds(population: Protocol[], candidates: Term[]): OddsModel {
+  // Order-free forward search: each round tries every remaining candidate and adds the one that
+  // lowers sqrt(10-fold x walk-forward Brier) most, among those that lower BOTH; it stops when none
+  // does. Every candidate left over is then shown tried on top of the final model (not kept).
   const ps = bySlug(population);
   const steps: OddsStep[] = [];
   let kept: Term[] = [];
   let bestCv = cvBrier(ps, kept);
   let bestWf = wfBrier(ps, kept);
   steps.push({ label: 'base rate', cv: bestCv, wf: bestWf, kept: null });
-  for (const t of candidates) {
-    const trial = [...kept, t];
-    const cv = cvBrier(ps, trial);
-    const wf = wfBrier(ps, trial);
-    const keep = cv < bestCv && wf < bestWf;
-    steps.push({ label: `+ ${t.label}`, cv, wf, kept: keep });
-    if (keep) {
-      kept = trial;
-      bestCv = cv;
-      bestWf = wf;
+  for (;;) {
+    let pick: { t: Term; cv: number; wf: number } | null = null;
+    for (const t of candidates) {
+      if (kept.includes(t)) continue;
+      const cv = cvBrier(ps, [...kept, t]);
+      const wf = wfBrier(ps, [...kept, t]);
+      if (cv < bestCv && wf < bestWf && (!pick || Math.sqrt(cv * wf) < Math.sqrt(pick.cv * pick.wf))) pick = { t, cv, wf };
     }
+    if (!pick) break;
+    kept = [...kept, pick.t];
+    bestCv = pick.cv;
+    bestWf = pick.wf;
+    steps.push({ label: `+ ${pick.t.label}`, cv: pick.cv, wf: pick.wf, kept: true });
+  }
+  for (const t of candidates) {
+    if (kept.includes(t)) continue;
+    steps.push({ label: `+ ${t.label}`, cv: cvBrier(ps, [...kept, t]), wf: wfBrier(ps, [...kept, t]), kept: false });
   }
   const fit = fitOn(ps, ps.map(tokenY), kept, 'logistic');
   const nTok = ps.filter((p) => tokenY(p) === 1).length;

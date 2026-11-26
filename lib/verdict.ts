@@ -1,15 +1,18 @@
-// Token Launch Radar v3: the farm verdict.
+// Token Launch Radar v4: the farm verdict.
 //
 // For one deposit held for the plan's weeks, what does the radar's own valuation say the wait is worth?
 //
 //   expected drop  = odds x value_if_launch x drop_share x deposit / (TVL + deposit)
-//   cost           = gas for every transaction of the plan + fees in and out + the 4% T-bill the
-//                    same money would have earned over the hold
-//   net            = expected drop - cost;   hours = setup minutes + 5 minutes a week
+//   cost           = gas for every transaction of the plan + fees in and out
+//   net            = expected drop - cost (net of fees);   hours = setup minutes + 5 minutes a week
+//   T-bill         = what the same money earns in a 4% T-bill over the hold: the bar a farm must beat
 //
-//   FARM      net > 0 and net per hands-on hour at least the hourly bar
-//   MARGINAL  net > 0 but under the bar
-//   SKIP      the cost is more than the expected drop
+//   FARM      after the T-bill too, what is left pays at least the hourly bar per hands-on hour
+//   MARGINAL  the drop beats gas and fees, but not the T-bill plus the hourly bar
+//   SKIP      gas and fees are more than the expected drop
+//
+// Yield the deposit earns inside the protocol is left out (the snapshot carries no rates), so the
+// T-bill is a benchmark the verdict must clear rather than a cost subtracted from every row.
 //
 // drop_share (the share of a launch's value handed to its users) is the one figure the snapshot
 // cannot supply. The page says so, lets the reader move it, and every row's grid shows the verdict at
@@ -25,7 +28,8 @@ export const VERDICT = {
   hourly_bar_usd: 25,
   weekly_minutes: 5,
   grid_shares: [0.035, 0.075, 0.15],
-  grid_deposits: [1_000, 5_000, 25_000],
+  grid_deposits: [1_000, 5_000, 10_000, 25_000],
+  farm_deposits: [1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000],
   grid_weeks: [4, 8, 13, 26],
 };
 
@@ -38,6 +42,7 @@ export interface Net {
   tbill_usd: number;
   cost_usd: number;
   net_usd: number;
+  beat_usd: number; // net minus the T-bill: what farming earns over parking the money
   hours: number;
   per_hour_usd: number;
   call: Call;
@@ -50,12 +55,13 @@ export function netFor(p: Protocol, v: Valuation, s: PlanSummary, deposit: numbe
   const gas = s.gas_tx_usd * (s.setup_txs + weeks + s.exit_txs);
   const fees = deposit * ((2 * s.fee_pct) / 100 + VERDICT.base_fee_rate);
   const bill = (deposit * tbill * weeks * 7) / 365;
-  const cost = gas + fees + bill;
+  const cost = gas + fees;
   const net = drop - cost;
+  const beat = net - bill;
   const hours = (s.setup_minutes + VERDICT.weekly_minutes * weeks) / 60;
   const perHour = net / hours;
-  const call: Call = net > 0 && perHour >= VERDICT.hourly_bar_usd ? 'FARM' : net > 0 ? 'MARGINAL' : 'SKIP';
-  return { drop_usd: r2(drop), gas_usd: r2(gas), fees_usd: r2(fees), tbill_usd: r2(bill), cost_usd: r2(cost), net_usd: r2(net), hours: r2(hours), per_hour_usd: r2(perHour), call };
+  const call: Call = beat / hours >= VERDICT.hourly_bar_usd ? 'FARM' : net > 0 ? 'MARGINAL' : 'SKIP';
+  return { drop_usd: r2(drop), gas_usd: r2(gas), fees_usd: r2(fees), tbill_usd: r2(bill), cost_usd: r2(cost), net_usd: r2(net), beat_usd: r2(beat), hours: r2(hours), per_hour_usd: r2(perHour), call };
 }
 
 export interface Verdict extends Net {
@@ -63,7 +69,9 @@ export interface Verdict extends Net {
   weeks: number;
   breakeven_share: number; // the drop share at which net is zero
   grid: number[][]; // net by [share][deposit], deposits = grid_deposits
-  by_weeks: number[]; // net at the plan's deposit and share, by grid_weeks
+  by_weeks: number[][]; // net at the plan's deposit, by [share][weeks], weeks = grid_weeks
+  farm_deposit_usd: number | null; // the smallest of farm_deposits at which the plan clears FARM
+  farm_share: number; // the drop share at which the plan deposit clears FARM
 }
 
 export function verdict(p: Protocol, v: Valuation, s: PlanSummary): Verdict {
@@ -75,6 +83,9 @@ export function verdict(p: Protocol, v: Valuation, s: PlanSummary): Verdict {
     weeks: s.weeks,
     breakeven_share: perShare > 0 ? Math.round((n.cost_usd / perShare) * 1e5) / 1e5 : 1,
     grid: VERDICT.grid_shares.map((sh) => VERDICT.grid_deposits.map((d) => netFor(p, v, s, d, sh, s.weeks).net_usd)),
-    by_weeks: VERDICT.grid_weeks.map((w) => netFor(p, v, s, s.deposit_usd, VERDICT.drop_share, w).net_usd),
+    by_weeks: VERDICT.grid_shares.map((sh) => VERDICT.grid_weeks.map((w) => netFor(p, v, s, s.deposit_usd, sh, w).net_usd)),
+    farm_deposit_usd: VERDICT.farm_deposits.find((d) => netFor(p, v, s, d, VERDICT.drop_share, s.weeks).call === 'FARM') ?? null,
+    // beat/hours = bar  <=>  share x perShare = cost + T-bill + bar x hours
+    farm_share: perShare > 0 ? Math.round(((n.cost_usd + n.tbill_usd + VERDICT.hourly_bar_usd * n.hours) / perShare) * 1e5) / 1e5 : 1,
   };
 }

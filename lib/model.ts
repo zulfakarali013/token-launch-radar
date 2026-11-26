@@ -1,4 +1,4 @@
-// Token Launch Radar v3: the board's universe and each protocol's valuation.
+// Token Launch Radar v4: the board's universe and each protocol's valuation.
 //
 // A protocol that records no token is valued in two parts, both fitted on this snapshot (lib/fit.ts):
 //
@@ -36,12 +36,13 @@ export interface Snapshot {
   watchlist: string[];
 }
 
-export const MODEL_VERSION = 'fitted-4';
+export const MODEL_VERSION = 'fitted-6';
 
 export const PARAMS = {
   min_tvl_usd: 5_000_000, // below this an off-list protocol is accounted for but not ranked
   cap_category_k: 6, // shrinkage of a category's premium, in peers
   odds_category_k: 10, // shrinkage of a category's token share, in peers
+  odds_peers_k: 30, // the nearest-peer term: how many peers by size and years listed
 };
 
 export function hasToken(p: Protocol): boolean {

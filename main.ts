@@ -1,4 +1,4 @@
-// Token Launch Radar v3: entry for make.fun's token-radar-01 (Node 22+, standard library only).
+// Token Launch Radar v6: entry for make.fun's token-radar-01 (Node 22+, standard library only).
 //
 // Reads /input/snapshot.json (or --input <file|dir>), fits the launch-value and token-odds models on
 // it and tests every term held-out (lib/fit.ts), values every pre-token protocol (lib/model.ts),
@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { MODEL_VERSION, PARAMS, accountFor, boardUniverse, comps, hasToken, kinOf, oddsPopulation, valueProtocol, type Protocol, type Snapshot } from './lib/model.ts';
-import { HUBER_DELTA, bootstrap, categoryPremium, categoryShare, fitCapModel, fitOdds, r4, recordTerms } from './lib/fit.ts';
+import { HUBER_DELTA, bootstrap, categoryPremium, categoryShare, fitCapModel, fitOdds, nearestPeers, r4, recordTerms } from './lib/fit.ts';
 import { PLAN, farmPlan, planSummary, stepString } from './lib/farm.ts';
 import { VERDICT, netFor, verdict } from './lib/verdict.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
@@ -38,16 +38,18 @@ const kin = kinOf(snap);
 const T = recordTerms(snap.as_of);
 const C = comps(snap);
 const POP = oddsPopulation(snap);
-const CAP_TERMS = [T.size, categoryPremium(PARAMS.cap_category_k), T.growth, T.age, T.chains];
+const CAP_TERMS = [T.size, categoryPremium(PARAMS.cap_category_k), T.growth, T.age, T.chains, T.size2, T.agesize, T.multi, T.swing, T.eth, T.young];
 // The same term search run twice: least squares, then a Huber loss (a wild cap counts linearly).
-// The Huber fit is used only if its final model beats least squares in BOTH blind tests.
+// The loss used is the one whose final model has the smaller typical miss across BOTH blind tests
+// (geometric mean of the leave-one-out and walk-forward miss multiples).
 const capLs = fitCapModel(C, CAP_TERMS, 'ridge');
 const capHu = fitCapModel(C, CAP_TERMS, 'huber');
 const last = (m: typeof capLs) => m.steps.filter((x) => x.kept !== false).at(-1)!;
-const huberWins = last(capHu).loo < last(capLs).loo && last(capHu).wf < last(capLs).wf;
+const both = (m: typeof capLs) => Math.sqrt(last(m).loo * last(m).wf);
+const huberWins = both(capHu) < both(capLs);
 const cap = huberWins ? capHu : capLs;
 const capAlt = huberWins ? capLs : capHu;
-const odds = fitOdds(POP, [T.age, categoryShare(PARAMS.odds_category_k), T.size, T.growth, T.chains]);
+const odds = fitOdds(POP, [T.age, categoryShare(PARAMS.odds_category_k), T.size, T.growth, T.chains, T.age2, T.agesize, T.multi, T.swing, T.eth, T.size2, T.young, T.sizeg, nearestPeers(PARAMS.odds_peers_k, snap.as_of)]);
 
 // 2. Value the board, plan and price a farm for every row, rank by implied value.
 const scored = boardUniverse(snap).map((p) => {
@@ -159,7 +161,7 @@ const data = {
     steps: cap.steps, keys: capKeys, kept: cap.terms.map((t) => t.label), w: cap.fit.w, se: boot.cap_se, table: tableOf(cap.fit.encs),
     bands: cap.bands, coverage: cap.coverage, n: cap.n, n_wf_train: cap.n_wf_train, n_wf_test: cap.n_wf_test, wf_cut: cap.wf_cut,
   },
-  odds: { steps: odds.steps, keys: oddsKeys, kept: odds.terms.map((t) => t.label), w: odds.fit.w, se: boot.odds_se, table: tableOf(odds.fit.encs), base_rate: odds.base_rate, n: odds.n, n_token: odds.n_token },
+  odds: { steps: odds.steps, keys: oddsKeys, kept: odds.terms.map((t) => t.label), w: odds.fit.w, se: boot.odds_se, table: tableOf(odds.fit.encs), peers: odds.fit.encs.find((e) => e.peers)?.peers ?? null, peers_k: PARAMS.odds_peers_k, peers_base: odds.fit.encs.find((e) => e.peers)?.base ?? null, base_rate: odds.base_rate, n: odds.n, n_token: odds.n_token },
   verdict: VERDICT,
   plan: PLAN,
   accounting,
