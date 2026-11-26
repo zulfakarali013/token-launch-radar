@@ -1,0 +1,47 @@
+/* theme: palette, type, cards, shared tables */
+:root {
+  color-scheme: dark;
+  --ink: #e8ebf2; --mut: #a3abbb; --faint: #7d8597; --line: #252c3b; --bg: #0b0e14; --card: #121722; --soft: #1a202d;
+  --acc: #8f95ff; --acc-soft: #20254380; --amb: #e9b55a; --amb-soft: #33291480; --hi: #ffd166;
+  --farm: #4fd69c; --farm-soft: #12352780; --marg: #f2c14e; --marg-soft: #3a301380; --skip: #ff7b84; --skip-soft: #3d1a1e80;
+  --mono: ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13.5px/1.45 Inter, "Segoe UI", system-ui, sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+b { font-weight: 650; }
+kbd { font: 11px var(--mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; background: var(--soft); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mut { color: var(--mut); } .faint { color: var(--faint); }
+.pos { color: var(--farm); } .neg { color: var(--skip); }
+.top { display: flex; align-items: center; gap: 20px; padding: 12px 24px; background: #080b11; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 12px; } .brand h1 { margin: 0; font-size: 19px; } .brand p { margin: 0; color: var(--mut); font-size: 12px; }
+.brand svg { width: 30px; height: 30px; fill: none; stroke: var(--acc); stroke-width: 1.6; } .brand .blip { fill: var(--hi); stroke: none; }
+.tabs { display: flex; gap: 4px; margin-left: 12px; }
+.tabs button { background: none; border: 0; color: #c9cedb; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.tabs button b { font-weight: 500; color: var(--faint); margin-left: 3px; }
+.tabs button.on { background: var(--acc); color: var(--bg); font-weight: 650; } .tabs button.on b { color: #1b2040; }
+.meta { margin: 0 0 0 auto; color: var(--mut); font-size: 12px; } .meta b { color: #fff; }
+main { padding: 16px 20px 32px; max-width: 1560px; margin: 0 auto; }
+.pane { display: none; } .pane.on { display: block; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 13px 16px; margin-bottom: 14px; }
+h2 { font-size: 11.5px; letter-spacing: .7px; text-transform: uppercase; margin: 0 0 8px; color: #cfd4df; }
+h2 code { font: 500 11px var(--mono); color: var(--acc); text-transform: none; letter-spacing: 0; margin-left: 2px; }
+.h2n { font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+table.t { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.35; }
+table.t th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--faint); font-weight: 650; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+table.t td { padding: 2px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t td:first-child { white-space: nowrap; }
+table.t tr.kept td { background: var(--acc-soft); font-weight: 650; }
+table.t tr.base td { color: var(--mut); }
+.tag { font-size: 11px; font-weight: 600; } .tag.kept { color: var(--farm); } .tag.drop { color: var(--faint); font-weight: 500; }
+.note { font-size: 11.5px; color: var(--mut); margin: 6px 0 0; line-height: 1.35; }
+.sub { font-size: 11.5px; color: var(--mut); }
+.call { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; padding: 1px 6px; border-radius: 4px; }
+.call.FARM { background: var(--farm-soft); color: var(--farm); } .call.MARGINAL { background: var(--marg-soft); color: var(--marg); } .call.SKIP { background: var(--skip-soft); color: var(--skip); }
+.badge { font-size: 9.5px; font-weight: 650; letter-spacing: .3px; padding: 0 5px; border-radius: 4px; margin-left: 6px; border: 1px solid var(--line); vertical-align: 1px; color: var(--mut); }
+.badge.w { color: var(--acc); } .badge.o { color: var(--amb); }
+.lnk:disabled { opacity: .45; }
+.lnk { float: right; border: 1px solid var(--line); background: var(--soft); border-radius: 6px; padding: 2px 10px; margin-left: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; }
+svg.chart { width: 100%; height: auto; display: block; } svg.chart text { font: 9px var(--mono); fill: var(--faint); } svg.chart .ax { stroke: var(--line); }

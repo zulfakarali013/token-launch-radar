@@ -51,12 +51,19 @@ stays in a model only if it lowers the held-out error in both blind tests.
 - `lib/farm.ts`: a 10-step plan per protocol on a timeline (verify, risk check, fund, test and
   enter, ledger, register, weekly, exit rule, claim on a launch, exit) plus a budget line, each step
   with its cost in dollars and its minutes; the steps add up to the verdict's gas and fees.
-- `dashboard/`: a static page, no network. Evidence strip, protocol ledger with live checks, the
-  formula with its fitted coefficients, the held-out tables and range honesty, a cap-on-TVL chart,
-  a sortable, filterable board with rank ranges and inline plans, what-if controls (deposit, drop
-  share, hold, T-bill) that reprice every verdict, CSV and JSON export, a full page per protocol
-  (how the figure is made, comparables priced blind, what moves the value, the plan, the grids),
-  the method, and the comparables. The page recomputes every value and verdict and shows the match.
+- `dashboard/`: a static page, no network, one job per file (format, model, state, chart, cover,
+  board, compare, sandbox, detail, method, app; theme, board and detail styles). Evidence strip,
+  protocol ledger with live checks, the formula with its fitted coefficients, the held-out tables
+  and range honesty, a cap-on-TVL chart, a sortable, filterable board with rank ranges and inline
+  plans, what-if controls (deposit, drop share, hold, T-bill) that reprice every verdict, pins
+  (up to four, kept in the URL) with a tray and a compare dialog that sets pinned protocols side by side with
+  the best figure in each line marked, CSV export, a full page per protocol (how the figure is
+  made, comparables priced blind, what moves the value, the plan, the grids) with a sandbox that
+  moves the record (TVL, 7-day change, more months with no token) and the plan (drop share,
+  deposit, hold) and reprices value and verdict with the fitted coefficients locked, "Reset to
+  fitted" included; the cover checks the sandbox against all 760 what-ifs main.ts priced. Keyboard:
+  `/` search, `c` compare, Esc close or back. The cover shows five headline figures, ten
+  self-checks in one strip, and only the kept model terms (every term tried is on the Evidence tab). The page recomputes every value and verdict and shows the match.
 
 Run locally:
 

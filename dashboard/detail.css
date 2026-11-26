@@ -1,0 +1,22 @@
+/* one protocol's page and its sandbox */
+.dhead { display: grid; grid-template-columns: 1fr auto auto; gap: 26px; align-items: center; border-top: 3px solid var(--hi); }
+.dhead .big { font-size: 46px; font-weight: 800; color: var(--hi); line-height: 1; font-variant-numeric: tabular-nums; }
+.dhead .big.mid { font-size: 36px; color: inherit; } .dhead .big .call { font-size: 15px; vertical-align: middle; }
+.dhead h2.name { font-size: 30px; font-weight: 800; text-transform: none; letter-spacing: 0; margin: 2px 0; }
+.dstats { display: flex; gap: 22px; margin-top: 9px; flex-wrap: wrap; }
+.dstats div { display: flex; flex-direction: column; }
+.dstats i { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--mut); }
+.dstats b { font: 750 17px var(--mono); }
+.dgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; }
+.cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.back { border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 4px 10px; cursor: pointer; margin: 0 6px 8px 0; }
+.back.on { color: var(--hi); border-color: #7a5d1c; }
+.sandbox { border-top: 3px solid var(--acc); }
+.sbin { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 14px; margin: 2px 0 8px; }
+.sbin label { display: flex; align-items: center; gap: 6px; color: var(--mut); font-size: 11px; white-space: nowrap; }
+.sbin input, .sbin select { flex: 1; min-width: 0; } .sbin b { color: var(--ink); min-width: 46px; text-align: right; }
+.sbin select { border: 1px solid var(--line); background: var(--soft); border-radius: 5px; padding: 2px 5px; flex: 1; }
+.sandbox table.t td { padding: 2px 6px; font-size: 11.5px; }
+/* narrow screens: the page never scrolls sideways; wide tables scroll inside their card */
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .evid { grid-template-columns: 1fr 1fr; } .dgrid, .cols2 { grid-template-columns: minmax(0, 1fr); } #tbl .plan-cell, #tbl th[data-k=plan] { display: none; } .pn { white-space: normal; } }
+@media (max-width: 760px) { .kpis, .evid, .dhead, .sbin { grid-template-columns: minmax(0, 1fr); } .top, main { padding: 10px; } .tabs { margin: 0; flex-wrap: wrap; } .meta { margin: 0; } .card, .evid > div, .tablewrap { overflow-x: auto; } .controls input[type=search] { width: 100%; } }
