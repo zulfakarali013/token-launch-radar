@@ -151,7 +151,19 @@ const live = [...C]
   .sort((a, b) => b.mcap_usd! - a.mcap_usd! || (a.slug < b.slug ? -1 : 1))
   .map((q) => ({ n: q.name, sy: q.symbol, c: q.category, l: q.listed_at, tvl: q.tvl_usd, mc: q.mcap_usd!, b: Math.round(q.tvl_usd * Math.exp(cap.loo_pred.get(q.slug)!)) }));
 
+// The Evidence tab's method notes, written here with the run's own figures (the page shows them as given)
+const pctOf = (x: number) => `${+(x * 100).toFixed(1)}%`;
+const methodNotes = [
+  ['Universe', `All ${snap.protocols.length} snapshot protocols go into one group each (cover bar). Bridges, staked forms, custody, chains, wrappers and kin of a token are neither ranked nor comparables.`],
+  ['Value if a token launches', `${cap.loss === 'huber' ? 'Huber' : 'Least-squares'} ridge of ln(cap / TVL) over ${cap.n} traded tokens. Terms enter in a fixed order and stay only if the miss falls in both blind tests: leave-one-out and walk-forward (fit on the ${cap.n_wf_train} listed before ${cap.wf_cut}, price the ${cap.n_wf_test} newer). Kept: ${cap.terms.map((t) => t.label).join(', ')}.`],
+  ['Token odds', `Penalised logistic of "records a token" over ${odds.n} protocols (${odds.n_token} do); terms, incl. the token share of the ${PARAMS.odds_peers_k} nearest peers, are added greedily while Brier falls in both ten-fold and walk-forward. Kept: ${odds.terms.map((t) => t.label).join(', ')}. Shares are learned inside each fold.`],
+  ['Ranges', `P25–P75 and P10–P90 are quantiles of both tests' misses pooled; the fresh test builds the band by the same rule from older tokens only (their left-out and inner walk-forward misses), then counts the newer (${cap.n_wf_test} newer tokens: one token moves it ${pctOf(1 / cap.n_wf_test)}). Rank ranges: 5th–95th percentile over 200 seeded refits.`],
+  ['Farm verdict', `Drop = odds × value if it launches × drop share (${pctOf(VERDICT.drop_share)}) × deposit / (TVL + deposit). Cost = gas for every plan transaction on the cheapest chain + fees. FARM beats a ${pctOf(VERDICT.tbill_rate)} T-bill by $${VERDICT.hourly_bar_usd} per hands-on hour; MARGINAL beats gas and fees only; SKIP does not. Deposits (0.05% of TVL, $1K–$25K) are never raised to pass.`],
+  ['Pins, compare, sandbox', 'Pins keep up to four rows for the compare panel (key c). The sandbox moves a record and plan, never the coefficients; moved() is checked on the cover against every what-if main.ts wrote.'],
+];
+
 const data = {
+  method_notes: methodNotes,
   as_of: snap.as_of,
   source: snap.source,
   floor_usd: snap.floor_usd,
@@ -169,6 +181,7 @@ const data = {
     protocols: snap.protocols.length,
     accounted,
     watchlist: snap.watchlist.length,
+    no_token: snap.protocols.filter((p) => !hasToken(p)).length,
     watchlist_ranked: rows.filter((r) => r.on_watchlist).length,
     board_sha256: createHash('sha256').update(boardText).digest('hex').slice(0, 12),
     total_implied_usd: rows.reduce((s, r) => s + r.implied_value_usd, 0),

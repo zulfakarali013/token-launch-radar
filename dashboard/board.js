@@ -1,11 +1,11 @@
-// The board: filters, sorting, ranked table with pins and in-row plans, watchlist FARM card.
+// Board: filters, sort, ranked table, pins, in-row plans, FARM card.
 'use strict';
 var COLS = [
   ['pin', '<span title="Pin to compare">\u2606</span>', 0], ['r', '# \u00b7 range', 1], ['n', 'Protocol', 0], ['tvl', 'TVL \u00b7 7D', 1], ['age', 'No token', 1], ['o', 'Odds \u00b7 if launch', 1],
-  ['iv', 'Implied \u00b7 P25\u2013P75', 1], ['net', 'Verdict \u00b7 net of fees', 1], ['nph', 'Net / hour', 1], ['plan', 'Farm plan', 0],
+  ['iv', 'Implied \u00b7 P25\u2013P75', 1], ['net', 'Verdict \u00b7 net of fees', 1], ['nph', 'Net / hour \u00b7 plan', 1],
 ];
 function sortKey(r, k, f) {
-  return { pin: pins().indexOf(r.s) < 0 ? 1 : 0, r: r.r, n: r.n.toLowerCase(), tvl: r.tvl, d7: r.d7 == null ? -1e9 : r.d7, age: r.v.days_without_token == null ? -1 : r.v.days_without_token, o: r.v.odds, ifl: r.v.value_if_launch_usd, iv: r.v.implied_value_usd, net: f.net, nph: f.ph, plan: r.ps.verb }[k];
+  return { pin: pins().indexOf(r.s) < 0 ? 1 : 0, r: r.r, n: r.n.toLowerCase(), tvl: r.tvl, d7: r.d7 == null ? -1e9 : r.d7, age: r.v.days_without_token == null ? -1 : r.v.days_without_token, o: r.v.odds, ifl: r.v.value_if_launch_usd, iv: r.v.implied_value_usd, net: f.net, nph: f.ph }[k];
 }
 function filtered() {
   var q = S.q.toLowerCase(), pn = pins();
@@ -47,10 +47,9 @@ function rowHtml(r, f) {
     '<td class="num">' + m(r.tvl) + '<div class="sub ' + (r.d7 == null ? '' : cls(r.d7)) + '">' + d7s(r.d7) + '</div></td><td class="num">' + age(v.days_without_token) + '</td>' +
     '<td class="num">' + pct(v.odds) + '<span class="odds"><i style="width:' + v.odds * 100 + '%"></i></span><div class="sub">' + m(v.value_if_launch_usd) + '</div></td>' +
     '<td class="num"><span class="iv">' + m(v.implied_value_usd) + '</span>' + rangeBar(v) + '<span class="sub">' + m(v.p25_usd) + ' \u2013 ' + m(v.p75_usd) + '</span></td>' +
-    '<td class="num">' + callTag(f.call) + ' <b class="' + cls(f.net) + '">' + sg(f.net) + '</b><div class="sub">' + m(f.drop) + ' drop \u2212 ' + m(f.cost) + ' fees \u00b7 <b class="' + cls(f.beat) + '">' + sg(f.beat) + ' vs T-bill</b></div></td>' +
-    '<td class="num ' + cls(f.ph) + '">' + sg(f.ph) + '<div class="sub">' + f.hours.toFixed(1) + ' h of work</div></td>' +
-    '<td class="plan-cell">' + esc(r.ps.verb) + ' \u25be<span class="sub">' + m(st.dep) + ' \u00b7 ' + st.wk + ' wk \u00b7 ' + (r.fp.length - 1) + ' steps \u00b7 ' + esc(r.ps.chain) + '</span></td></tr>' +
-    (S.open === r.s ? '<tr class="plan"><td colspan="10">' + stepsTable(r, f) + '</td></tr>' : '');
+    '<td class="num">' + callTag(f.call) + ' <b class="' + cls(f.net) + '">' + sg(f.net) + '</b><div class="sub">' + m(f.drop) + ' drop \u2212 ' + m(f.cost) + ' fees<span class="vb"> \u00b7 ' + sg(f.beat) + ' vs T-bill</span></div></td>' +
+    '<td class="num ' + cls(f.ph) + '">' + sg(f.ph) + '<div class="sub">' + (r.fp.length - 1) + ' steps \u00b7 ' + f.hours.toFixed(1) + ' h \u00b7 ' + st.wk + ' wk \u25be</div></td></tr>' +
+    (S.open === r.s ? '<tr class="plan"><td colspan="9"><p class="pv">' + esc(r.ps.verb) + ' on ' + esc(r.ps.chain) + ', ' + m(st.dep) + ' for ' + st.wk + ' weeks</p>' + stepsTable(r, f) + '</td></tr>' : '');
 }
 function board() {
   var list = filtered();
@@ -58,10 +57,10 @@ function board() {
   $('tbl').querySelector('tbody').innerHTML = list.map(function (x) { return rowHtml(x.r, x.f); }).join('');
   legend(); wlbar();
   var iv = list.reduce(function (s, x) { return s + x.r.v.implied_value_usd; }, 0);
-  $('count').innerHTML = '<b>' + list.length + '</b> of ' + D.rows.length + ' rows \u00b7 ' + m(iv) + ' implied in view' + (plain() ? ' \u00b7 verdicts at each plan\u2019s deposit and hold, ' + V.drop_share * 100 + '% drop share' : ' \u00b7 <b>what-if</b>: verdicts repriced at your settings; values unchanged') + ' \u00b7 click a row for its plan, a name for its page';
+  $('count').innerHTML = '<b>' + list.length + '</b> of ' + D.rows.length + ' rows \u00b7 ' + m(iv) + ' implied' + (plain() ? ' \u00b7 plan deposit and hold, ' + V.drop_share * 100 + '% drop share' : ' \u00b7 <b>what-if</b>: verdicts repriced at your settings; values unchanged');
 }
 function legend() {
-  $('vleg').innerHTML = callTag('FARM') + ' beats a ' + S.tb + '% T-bill by $' + V.hourly_bar_usd + '+ per hour of work \u00b7 ' + callTag('MARGINAL') + ' beats gas and fees, not that bar \u00b7 ' + callTag('SKIP') + ' gas and fees exceed the drop';
+  $('vleg').innerHTML = callTag('FARM') + ' beats a ' + S.tb + '% T-bill by $' + V.hourly_bar_usd + '+/h \u00b7 ' + callTag('MARGINAL') + ' beats gas and fees \u00b7 ' + callTag('SKIP') + ' fees exceed the drop' + (S.pins ? '' : ' \u00b7 <span class="faint">\u2606 pin 4 to compare</span>');
 }
 function farmFrom(r) { var s = settings(r); return V.farm_deposits.filter(function (d) { return farmPlan(r, d, s.sh, s.wk, s.tb).call === 'FARM'; })[0] || null; }
 function wlbar() {
@@ -71,7 +70,9 @@ function wlbar() {
   var ws = D.rows.filter(function (r) { return r.w; }).map(function (r) { return { r: r, f: live(r), s: settings(r) }; });
   var pass = ws.filter(function (x) { return x.f.call === 'FARM'; }).length;
   var near = ws.filter(function (x) { return x.f.call !== 'FARM'; }).sort(function (a, b) { return b.f.beat / b.f.hours - a.f.beat / a.f.hours; }).slice(0, 3);
-  el.innerHTML = '<h2>Watchlist at the FARM bar: ' + pass + ' of ' + ws.length + ' clear it at plan size <span class="mut h2n">closest: ' + near.map(function (x) { var fd = farmFrom(x.r); return '<b>' + esc(x.r.n) + '</b> ' + sg(x.f.beat / x.f.hours) + '/h vs T-bill, FARM from ' + (fd ? m(fd) : 'no deposit') ; }).join(' \u00b7 ') + '</span></h2>';
+  var tv = ws.map(function (x) { return x.r.tvl; }).sort(function (a, b) { return a - b; }), fm = Math.max.apply(0, D.rows.filter(function (r) { return live(r).call === 'FARM'; }).map(function (r) { return r.tvl; }));
+  el.innerHTML = '<h2>Watchlist at the FARM bar: ' + pass + ' of ' + ws.length + ' clear it at plan size <span class="mut h2n">closest: ' + near.map(function (x) { var fd = farmFrom(x.r); return '<b>' + esc(x.r.n) + '</b> ' + sg(x.f.beat / x.f.hours) + '/h vs T-bill, FARM from ' + (fd ? m(fd) : 'no deposit') ; }).join(' \u00b7 ') + '</span></h2>' +
+    (pass ? '' : '<p class="note">Why none: TVL ' + m(tv[0]) + '\u2013' + m(tv[tv.length - 1]) + ' dilutes a deposit capped at $25K (never raised to pass); every FARM row is under ' + m(fm) + '.</p>');
 }
 function controls() {
   var cnt = function (c) { return D.rows.filter(function (r) { return c === 'all' || live(r).call === c; }).length; };

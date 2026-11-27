@@ -1,4 +1,4 @@
-// Page state. Everything lives in the URL hash (filters, sort, pins, sandbox), so every view is a link.
+// Page state, all in the URL hash, so every view is a link.
 'use strict';
 var DEF = { tab: 'board', call: 'all', tier: 'all', q: '', cat: '', chain: '', dep: 'plan', sh: V.drop_share * 100, wk: 'plan', tb: V.tbill_rate * 100, sort: 'r', dir: 1, open: '', p: '', sum: 1, pins: '', cx: 0, xt: 0, xg: 0, xm: 0 };
 var S = {};
@@ -18,7 +18,7 @@ function writeHash() {
 function settings(r) { return { dep: S.dep === 'plan' ? r.ps.deposit_usd : Number(S.dep), sh: S.sh / 100, wk: S.wk === 'plan' ? r.ps.weeks : Number(S.wk), tb: S.tb / 100 }; }
 function live(r) { var s = settings(r); return farmPlan(r, s.dep, s.sh, s.wk, s.tb); }
 function plain() { return S.dep === 'plan' && S.wk === 'plan' && S.sh === DEF.sh && S.tb === DEF.tb; }
-// pins: up to four protocols kept for the compare panel
+// pins: up to four, for compare
 function pins() { return S.pins ? S.pins.split(',') : []; }
 function togglePin(s) {
   var p = pins(), i = p.indexOf(s);

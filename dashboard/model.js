@@ -1,4 +1,4 @@
-// The fitted model from main.ts's coefficients; the cover prints whether it matches board.json.
+// Fitted model from main.ts's coefficients, checked against board.json.
 'use strict';
 var D = window.RADAR, V = D.verdict, C = D.cap, O = D.odds, K = D.checks;
 var asOf = Date.parse(D.as_of + 'T00:00:00Z');
@@ -23,7 +23,7 @@ function col(key, r, table) {
 function r4(x) { return Math.round(x * 1e4) / 1e4; }
 function r2(x) { return Math.round(x * 100) / 100; }
 function lgt(p) { return LN(p / (1 - p)); }
-// nearest-peer term: token share of the k closest peers (own row out)
+// nearest-peer token share of the k closest (own row out)
 function knn(r) {
   var k = O.peers_k, b = O.peers_base, x = r4(LN(r.tvl / 1e8) / 2), z = r4(LN(1 + years(r)) / 0.5);
   var d = O.peers.filter(function (v) { return v[3] !== r.s; }).map(function (v) { return [Math.pow(v[0] - x, 2) + Math.pow(v[1] - z, 2), v[2], v[3]]; });
@@ -36,7 +36,7 @@ function impliedValue(r) {
   var ifl = r.tvl * Math.exp(score(C, r)), o = 1 / (1 + Math.exp(-score(O, r)));
   return { ifl: ifl, o: o, iv: Math.max(1, Math.round(ifl * o)) };
 }
-// lib/verdict.ts netFor at any deposit, share, hold, T-bill; `v` swaps the value
+// netFor (lib/verdict.ts) at any deposit, share, hold, T-bill
 function farmPlan(r, dep, sh, wk, tb, v) {
   var ps = r.ps; v = v || { o: r.v.odds, ifl: r.v.value_if_launch_usd };
   var drop = v.o * v.ifl * sh * (dep / (r.tvl + dep));
@@ -47,7 +47,7 @@ function farmPlan(r, dep, sh, wk, tb, v) {
   var hours = (ps.setup_minutes + V.weekly_minutes * wk) / 60, ph = net / hours;
   return { drop: drop, gas: gas, fees: fees, bill: bill, cost: cost, net: net, beat: beat, hours: hours, ph: ph, call: beat / hours >= V.hourly_bar_usd ? 'FARM' : net > 0 ? 'MARGINAL' : 'SKIP' };
 }
-// the record moved: TVL by t%, 7-day by g points, mo more months with no token
+// record moved: TVL t%, 7-day g pts, mo more months without a token
 function moved(r, t, g, mo) {
   var q = Object.assign({}, r, { tvl: r.tvl * (1 + t / 100), d7: (r.d7 == null ? 0 : r.d7) + g });
   if (mo && r.l) q.l = new Date(Date.parse(r.l + 'T00:00:00Z') - Math.round(mo * 182 / 6) * 864e5).toISOString().slice(0, 10);
@@ -58,7 +58,7 @@ D.rows.forEach(function (r) {
   if (impliedValue(r).iv === r.v.implied_value_usd) same++;
   if (r2(farmPlan(r, r.ps.deposit_usd, V.drop_share, r.ps.weeks, V.tbill_rate).net) === r.vd.net_usd) sameV++;
 });
-// main.ts's what-if rows, repriced through moved()
+// what-if rows from main.ts, via moved()
 var sameS = 0, nS = 0;
 D.rows.forEach(function (r) {
   [[-30, 0, 0], [100, 0, 0], [0, null, 0], [0, 0, 6]].forEach(function (a, i) {

@@ -1,4 +1,4 @@
-// Sandbox: move the record and the plan, never the coefficients; at zero it equals board.json.
+// Sandbox: move the record and plan, never the coefficients.
 'use strict';
 function sandbox(r) {
   var q = moved(r, S.xt, S.xg, S.xm), a = impliedValue(r), b = impliedValue(q), st = settings(r);

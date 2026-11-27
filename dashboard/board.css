@@ -1,22 +1,23 @@
-/* cover and board: KPIs, ledger, evidence, controls, ranked table, compare tray and dialog */
-.kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 14px; }
-.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 11px 15px; }
-.kpi .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--mut); font-weight: 650; }
-.kpi .v { font-size: 30px; font-weight: 800; white-space: nowrap; margin: 3px 0 2px; color: var(--hi); line-height: 1.1; }
-.kpi .v small { font-size: 12.5px; color: var(--mut); font-weight: 500; }
-.kpi .d { font-size: 11.5px; color: var(--mut); line-height: 1.3; }
-.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 4px 0 8px; gap: 2px; }
+/* cover and board */
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); padding: 0; margin-bottom: 10px; }
+.strip > div { padding: 7px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+.strip > div:first-child { border-left: 0; }
+.strip .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--mut); font-weight: 650; }
+.strip .v { font-size: 22px; font-weight: 750; color: var(--hi); line-height: 1.2; white-space: nowrap; } .strip em { font-style: normal; }
+.strip .d { font-size: 11.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acct { padding: 9px 16px; margin-bottom: 10px; } .arow { display: flex; gap: 14px; align-items: center; margin-bottom: 6px; } .arow h2 { margin: 0; white-space: nowrap; } .arow .bar { flex: 1; margin: 0; }
+.bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin: 0 0 7px; gap: 2px; }
 .legend, .checks { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--mut); }
 .legend b { color: var(--ink); }
 .legend em { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
-.checks { gap: 6px 14px; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); align-items: baseline; }
-.ckh { color: var(--farm); font-size: 12.5px; } .ckh.bad { color: var(--skip); }
-.ok { font: 11.5px var(--mono); color: #c6ccd8; } .ok i { font-style: normal; color: var(--farm); }
+.checks { gap: 4px 13px; margin-top: 7px; }
+.ok { font: 11px var(--mono); color: var(--faint); } .ok i { font-style: normal; color: var(--farm); }
 .ok.bad, .ok.bad i { color: var(--skip); }
-.formula { border-left: 3px solid var(--acc); font-size: 12.5px; padding: 10px 16px; color: #cfd4df; }
-.formula b { color: var(--acc); }
+.formula { padding: 9px 16px; margin-bottom: 12px; } .formula h2 { margin: 0 0 6px; } .formula b { color: var(--acc); } .formula a { color: var(--acc); }
+.oos { display: grid; grid-template-columns: 1.15fr 1.15fr 1fr; gap: 20px; align-items: start; }
+.oos h3 { margin: 0 0 3px; font-size: 12px; font-weight: 650; color: var(--ink); }
 .evid { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr .9fr; gap: 22px; align-items: start; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 6px 0 8px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0 6px; }
 .controls label { display: inline-flex; align-items: center; gap: 6px; color: var(--mut); font-size: 12.5px; }
 .controls select, .controls input, .controls > button, .seg { border: 1px solid var(--line); background: var(--card); border-radius: 7px; padding: 5px 9px; cursor: pointer; }
 .controls input[type=search] { width: 220px; }
@@ -25,7 +26,8 @@ input[type=range] { width: 92px; accent-color: var(--acc); padding: 0; border: 0
 .seg { display: inline-flex; overflow: hidden; padding: 0; }
 .seg button { border: 0; background: none; padding: 5px 11px; cursor: pointer; border-right: 1px solid var(--line); }
 .seg button.on { background: var(--acc); color: var(--bg); }
-.count, .vleg { margin: 0 0 6px; color: var(--mut); font-size: 12px; }
+.count, .vleg { display: inline-block; margin: 0 18px 8px 0; color: var(--mut); font-size: 12px; }
+#wlbar { padding: 9px 16px; margin-bottom: 10px; } #wlbar h2 { margin: 0; } #wlbar .note { margin: 4px 0 0; }
 .tray { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 10px; padding: 8px 14px; border: 1px dashed #4a4220; border-radius: 10px; color: var(--mut); }
 .tray b { color: var(--hi); } .tray button { border: 1px solid #7a5d1c; background: none; color: var(--hi); border-radius: 7px; padding: 4px 12px; cursor: pointer; }
 .tray .faint { margin-left: auto; }
@@ -51,7 +53,7 @@ dialog.cmp::backdrop { background: #05070b66; }
 .rng { width: 50px; height: 6px; margin: 0 6px 0 0; overflow: visible; }
 .rng i { position: absolute; height: 6px; background: #3b4190; border-radius: 3px; }
 .rng u { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--acc); }
-.plan-cell { font-size: 12px; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; } .plan-cell .sub { display: block; }
+.pv { margin: 2px 0 8px; font-weight: 600; }
 tr.plan td { background: #0f1320; padding: 8px 14px 14px 46px; }
 .steps { width: 100%; border-collapse: collapse; font-size: 12px; }
 .steps th { text-align: left; font-size: 10px; text-transform: uppercase; color: var(--mut); padding: 3px 6px; }
@@ -61,3 +63,6 @@ tr.plan td { background: #0f1320; padding: 8px 14px 14px 46px; }
 .n { display: inline-flex; width: 17px; height: 17px; border-radius: 50%; background: var(--acc); color: var(--bg); font-weight: 700; font-size: 10px; align-items: center; justify-content: center; margin-right: 6px; }
 table.cmp { font-size: 12.5px; } table.cmp th { font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--ink); }
 table.cmp th a { color: var(--ink); } table.cmp td { padding: 3px 10px; } table.cmp td.best { background: var(--farm-soft); color: var(--farm); }
+.crit { margin: 2px 0 10px; }
+.lead { margin: 0 0 4px; font-size: 21px; font-weight: 600; color: var(--ink); } .lead b { color: var(--farm); font-size: 24px; } .lead span { font-size: 14px; color: var(--mut); font-weight: 500; margin-left: 8px; }
+dialog.cmp.inline { position: static; width: auto; max-height: none; margin: 0 0 12px; box-shadow: none; }

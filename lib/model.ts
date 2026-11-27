@@ -104,20 +104,33 @@ export function oddsPopulation(s: Snapshot): Protocol[] {
   return s.protocols.filter((p) => p.listed_at !== null && kindOf(p) === null && !kin.has(p.slug));
 }
 
-/** Which pre-token protocols the board ranks: every watchlist slug, plus stand-alone pre-token protocols over the floor. */
+/** Named like a later version (a version marker at the end) while no protocol of its name family records a token:
+ *  there is no traded token it could be a version of, so it is a pre-token protocol. */
+export function familyFree(s: Snapshot): Set<string> {
+  const tok = new Set(s.protocols.filter(hasToken).map((p) => stem(p.name)));
+  const out = new Set<string>();
+  for (const p of s.protocols)
+    if (!hasToken(p) && kindOf(p) === 'wrapped' && !/\bwrapped\b/i.test(p.name) && !tok.has(stem(p.name))) out.add(p.slug);
+  return out;
+}
+
+/** Which pre-token protocols the board ranks: every watchlist slug, stand-alone pre-token protocols over $5M, and the family-free forms. */
 export function boardUniverse(s: Snapshot): Protocol[] {
   const watch = new Set(s.watchlist);
   const kin = kinOf(s);
-  return s.protocols.filter((p) => watch.has(p.slug) || (!hasToken(p) && p.tvl_usd >= PARAMS.min_tvl_usd && kindOf(p) === null && !kin.has(p.slug)));
+  const free = familyFree(s);
+  return s.protocols.filter((p) => watch.has(p.slug) || (!hasToken(p) && p.tvl_usd >= PARAMS.min_tvl_usd && ((kindOf(p) === null && !kin.has(p.slug)) || free.has(p.slug))));
 }
 
 /** Where every snapshot protocol went, in exactly one group, each with its reason. */
 export function accountFor(s: Snapshot): { key: string; label: string; why: string; slugs: string[] }[] {
   const watch = new Set(s.watchlist);
   const kin = kinOf(s);
+  const free = familyFree(s);
   const G: { key: string; label: string; why: string; test: (p: Protocol) => boolean }[] = [
     { key: 'watch', label: 'Ranked: watchlist', why: 'on the house list: always ranked', test: (p) => watch.has(p.slug) },
     { key: 'early', label: 'Ranked: off-list', why: 'stand-alone, no token, TVL at least $5M', test: (p) => !hasToken(p) && kindOf(p) === null && !kin.has(p.slug) && p.tvl_usd >= PARAMS.min_tvl_usd },
+    { key: 'free', label: 'Ranked: version name, no token in family', why: 'ends in a version marker, but no protocol of its name family records a token', test: (p) => free.has(p.slug) && p.tvl_usd >= PARAMS.min_tvl_usd },
     { key: 'comps', label: 'Token trades: comparables', why: 'a stand-alone token with a market cap: it prices the board', test: (p) => kindOf(p) === null && p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0 },
     { key: 'recorded', label: 'Token on record, no cap', why: 'a ticker or CoinGecko id but no market cap: not ranked, not priced from', test: (p) => kindOf(p) === null && hasToken(p) },
     { key: 'bridge', label: 'Bridge', why: 'moves a token that already trades', test: (p) => kindOf(p) === 'bridge' },

@@ -1,4 +1,4 @@
-// Cap on TVL scatter: comparables, the board if it launches, fitted curve, P25-P75 band.
+// Cap on TVL scatter with fitted curve and P25-P75 band.
 'use strict';
 function scatter(hi, W, H) {
   var lx = function (v) { return 24 + (LN(v) - LN(3e6)) / (LN(5e10) - LN(3e6)) * (W - 30); };

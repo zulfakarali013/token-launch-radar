@@ -18,10 +18,12 @@ stays in a model only if it lowers the held-out error in both blind tests.
   Before it writes anything it checks the board against the gate's rules, that every snapshot
   protocol sits in exactly one group, that each verdict agrees with the verdict formula, and it
   scans its own code and the page for any protocol name (the count is printed on the cover: 0).
-- `lib/model.ts` sorts all 758 protocols into one group each (watchlist, off-list, traded
-  comparables, token on record, bridge, staked form, exchange custody, wrapper or version, chain,
-  kin of a token), by category and name shape alone. Comparables are stand-alone traded tokens
-  only, so a staked or bridged form never prices a launch.
+- `lib/model.ts` sorts all 758 protocols into one group each (watchlist, off-list, version-named
+  with no token in its name family, traded comparables, token on record, bridge, staked form,
+  exchange custody, wrapper or version, chain, kin of a token), by category and name shape alone.
+  A protocol whose name ends in a version marker is ranked when no protocol of its name family
+  records a token (there is no traded token it could be a version of). Comparables are stand-alone
+  traded tokens only, so a staked or bridged form never prices a launch.
 - `lib/fit.ts` holds the fitted models.
   - **Value if a token launches:** regression of ln(market cap / TVL) over the 88 stand-alone
     traded tokens. Tested leave-one-out and walk-forward (fit on the earliest-listed 60%, price the
@@ -61,7 +63,7 @@ stays in a model only if it lowers the held-out error in both blind tests.
   made, comparables priced blind, what moves the value, the plan, the grids) with a sandbox that
   moves the record (TVL, 7-day change, more months with no token) and the plan (drop share,
   deposit, hold) and reprices value and verdict with the fitted coefficients locked, "Reset to
-  fitted" included; the cover checks the sandbox against all 760 what-ifs main.ts priced. Keyboard:
+  fitted" included; the cover checks the sandbox against all 804 what-ifs main.ts priced. Keyboard:
   `/` search, `c` compare, Esc close or back. The cover shows five headline figures, ten
   self-checks in one strip, and only the kept model terms (every term tried is on the Evidence tab). The page recomputes every value and verdict and shows the match.
 

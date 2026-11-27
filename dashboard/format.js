@@ -1,4 +1,4 @@
-// Formatting helpers shared by every view. No state, no data.
+// Formatting helpers. No state, no data.
 'use strict';
 var $ = function (id) { return document.getElementById(id); };
 var LN = Math.log;

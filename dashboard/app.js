@@ -1,4 +1,4 @@
-// Wiring: tabs, controls, pins, compare dialog, sandbox inputs, keyboard (/ search, c compare, Esc), CSV export.
+// Wiring: tabs, controls, pins, compare, sandbox, keys (/ c Esc), CSV.
 'use strict';
 function download(name, text, type) { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; a.click(); }
 function exportRows() {
@@ -7,7 +7,7 @@ function exportRows() {
 function render() {
   ['board', 'detail', 'method', 'comps'].forEach(function (t) { $(t).classList.toggle('on', S.tab === t); });
   [].forEach.call(document.querySelectorAll('#tabs button'), function (b) { var on = b.dataset.tab === S.tab || (S.tab === 'detail' && b.dataset.tab === 'board'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
-  ['kpis', 'acct', 'formula', 'evid'].forEach(function (id) { $(id).style.display = S.sum ? '' : 'none'; });
+  ['crit', 'kpis', 'acct', 'formula'].forEach(function (id) { $(id).style.display = S.sum ? '' : 'none'; });
   $('sum').textContent = S.sum ? 'Hide summary' : 'Show summary';
   if (S.tab === 'board') { controls(); board(); }
   if (S.tab === 'detail') detail();
@@ -52,7 +52,7 @@ function bind() {
     if (e.target.closest('[data-sbreset]')) { S.xt = S.xg = S.xm = 0; S.sh = DEF.sh; S.dep = S.wk = 'plan'; syncInputs(); render(); return; }
     onPin(e);
   };
-  // sandbox inputs reprice only its card, so a slider keeps focus
+  // sandbox reprices only its card
   $('detail').oninput = function (e) {
     var k = e.target.dataset.x; if (!k) return;
     S[k] = typeof DEF[k] === 'number' ? Number(e.target.value) : e.target.value;

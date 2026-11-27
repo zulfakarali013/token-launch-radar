@@ -1,8 +1,9 @@
-// Compare: a tray naming the pins, and a dialog with the pinned protocols (up to four) side by side, best figure marked.
+// Compare: pin tray and a side-by-side dialog, best figure marked.
 'use strict';
 function compare() {
   var rs = pins().map(bySlug).filter(Boolean), dl = $('cmp');
-  $('cmpbar').innerHTML = (rs.length ? '<b>\u2605 ' + rs.length + ' pinned</b> ' + rs.map(function (r) { return esc(r.n); }).join(' \u00b7 ') + ' <button data-open="1">Compare ' + rs.length + ' side by side \u25b8</button><button data-clear="1">Clear</button>' : '\u2606 pin up to 4 rows to compare them') + '<span class="faint"><kbd>c</kbd> compare \u00b7 <kbd>/</kbd> search \u00b7 <kbd>Esc</kbd> close</span>';
+  $('cmpbar').innerHTML = (rs.length ? '<b>\u2605 ' + rs.length + ' pinned</b> ' + rs.map(function (r) { return esc(r.n); }).join(' \u00b7 ') + ' <button data-open="1">Compare ' + rs.length + ' side by side \u25b8</button><button data-clear="1">Clear</button>' : '') + '<span class="faint"><kbd>c</kbd> compare \u00b7 <kbd>/</kbd> search \u00b7 <kbd>Esc</kbd> close</span>';
+  $('cmpbar').style.display = rs.length ? '' : 'none'; // empty tray: the hint moves to the legend line
   if (!rs.length || !S.cx || S.tab !== 'board') { S.cx = 0; if (dl.open) dl.close(); return; }
   var fs = rs.map(live), st = rs.map(settings);
   // [label, value(i), rank-by(i) or null]
@@ -27,5 +28,7 @@ function compare() {
     return '<tr><td>' + l[0] + '</td>' + rs.map(function (_, i) { return '<td class="num' + (i === best ? ' best' : '') + '">' + l[1](i) + '</td>'; }).join('') + '</tr>';
   }).join('');
   dl.innerHTML = '<h2>Compare pinned <span class="mut h2n">' + rs.length + ' of 4 \u00b7 farmPlan() at your settings \u00b7 green = best in the line</span> <button class="lnk" data-close="1">Close \u00d7</button><button class="lnk" data-clear="1">Clear pins</button></h2><table class="t cmp">' + head + body + '</table>';
-  if (!dl.open) dl.showModal();
+  // cx=2: inline above a filtered board
+  dl.classList.toggle('inline', S.cx === 2);
+  if (!dl.open) S.cx === 2 ? dl.show() : dl.showModal();
 }

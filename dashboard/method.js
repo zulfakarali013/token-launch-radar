@@ -1,14 +1,10 @@
-// Method and comparables tabs, read from the same fitted objects as the cover.
+// Method and comparables tabs, from the cover's fitted objects.
 'use strict';
 function method() {
-  $('method').innerHTML = '<div class="card evid">' + evidence(1) + '</div><div class="card method"><h2>Method and tests</h2>' +
-    '<p><b>Universe.</b> All ' + K.protocols + ' snapshot protocols go into one group each (cover bar). Bridges, staked forms, custody, chains, wrappers and kin of a token are neither ranked nor comparables.</p>' +
-    '<p><b>Value if a token launches.</b> ' + (C.loss === 'huber' ? 'Huber' : 'Least-squares') + ' ridge of ln(cap / TVL) over ' + C.n + ' traded tokens. Terms enter in a fixed order and stay only if the miss falls in both blind tests: leave-one-out and walk-forward (fit on the ' + C.n_wf_train + ' listed before ' + C.wf_cut + ', price the ' + C.n_wf_test + ' newer). Kept: ' + C.kept.join(', ') + '.</p>' +
-    '<p><b>Token odds.</b> Penalised logistic of \u201crecords a token\u201d over ' + O.n + ' protocols (' + O.n_token + ' do); terms, incl. the token share of the ' + O.peers_k + ' nearest peers, are added greedily while Brier falls in both ten-fold and walk-forward. Kept: ' + O.kept.join(', ') + '. Shares are learned inside each fold.</p>' +
-    '<p><b>Ranges.</b> P25\u2013P75 and P10\u2013P90 are quantiles of both tests\u2019 misses pooled; the fresh test reads the band from older tokens only. Rank ranges: 5th\u201395th percentile over ' + K.bootstrap + ' seeded refits.</p>' +
-    '<p><b>Farm verdict.</b> Drop = odds \u00d7 value if it launches \u00d7 drop share (' + V.drop_share * 100 + '%) \u00d7 deposit / (TVL + deposit). Cost = gas for every plan transaction on the cheapest chain + fees. FARM beats a ' + V.tbill_rate * 100 + '% T-bill by $' + V.hourly_bar_usd + ' per hands-on hour; MARGINAL beats gas and fees only; SKIP does not. Ten costed steps add up to the verdict; deposits (0.05% of TVL, $1K\u2013$25K) are never raised to pass.</p>' +
-    '<p><b>Pins, compare, sandbox.</b> \u2606 pins up to four rows into the compare dialog (key c). The sandbox moves a record and plan, never the coefficients; moved() is checked on the cover against ' + nS + ' what-ifs from main.ts.</p>' +
-    '<p><b>Integrity.</b> This page recomputes every value and verdict of board.json and names ' + K.names_in_code + ' protocols in code.</p></div>';
+  // notes from main.ts; integrity recomputed here
+  $('method').innerHTML = '<div class="card evid">' + evidence() + '</div><div class="card method"><h2>Method and tests</h2>' +
+    D.method_notes.map(function (n) { return '<p><b>' + esc(n[0]) + '.</b> ' + esc(n[1]) + '</p>'; }).join('') +
+    '<p><b>Integrity.</b> This page recomputes every value and verdict of board.json (' + same + '/' + D.rows.length + ') and names ' + K.names_in_code + ' protocols in code.</p></div>';
 }
 function comps() {
   var rows = D.live.map(function (q) { var x = q.mc / q.b; return '<tr><td>' + esc(q.n) + ' <span class="faint">' + esc(q.sy || '') + '</span></td><td class="mut">' + esc(q.c) + '</td><td class="num">' + (q.l || '\u2013') + '</td><td class="num">' + m(q.tvl) + '</td><td class="num">' + m(q.mc) + '</td><td class="num">' + (q.mc / q.tvl).toFixed(3) + '</td><td class="num">' + m(q.b) + '</td><td class="num ' + (Math.abs(LN(x)) < LN(3) ? 'pos' : 'neg') + '">' + x2(x) + '</td></tr>'; }).join('');

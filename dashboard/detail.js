@@ -1,4 +1,4 @@
-// One protocol: its figure, comparables, costed plan, grids, benchmarks and sandbox.
+// One protocol: figure, comparables, costed plan, grids, sandbox.
 'use strict';
 function detail() {
   var r = bySlug(S.p);

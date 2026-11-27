@@ -298,7 +298,7 @@ export interface CapModel {
   steps: CapStep[];
   loo_pred: Map<string, number>; // each comparable's blind log(cap/TVL)
   bands: { p10: number; p25: number; p75: number; p90: number };
-  coverage: { in50_loo: number; in80_loo: number; in3x_loo: number; in50_wf: number; in80_wf: number; in3x_wf: number; in50_fresh: number; in80_fresh: number; in50_older: number; in80_older: number };
+  coverage: { in50_loo: number; in80_loo: number; in3x_loo: number; in50_wf: number; in80_wf: number; in3x_wf: number; in50_fresh: number; in80_fresh: number; in50_fresh_v9: number; in80_fresh_v9: number; in50_older: number; in80_older: number };
   fresh_bands: { p10: number; p25: number; p75: number; p90: number };
   n: number;
   n_wf_train: number;
@@ -359,12 +359,18 @@ export function fitCapModel(comps: Protocol[], candidates: Term[], loss: CapLoss
   const bands = { p10: q(0.1), p25: q(0.25), p75: q(0.75), p90: q(0.9) };
   const share = (rs: number[], lo: number, hi: number) => r4(rs.filter((r) => r >= lo && r <= hi).length / rs.length);
   const split = walkSplit(ps);
-  // A fresh test of the band: read it off the older tokens only (each priced, left out, by a fit on
-  // the older tokens alone), then count how many newer tokens' walk-forward misses fall inside it.
-  // No newer token touches that band, so this coverage is out of sample in time.
+  // A fresh test of the band: build it by the SAME rule as the page's band (both blind tests' misses
+  // pooled), but from the older tokens only: their leave-one-out misses (fit on older tokens alone)
+  // plus a walk-forward inside them (oldest 60% of the older tokens price the rest). Then count how
+  // many newer tokens' walk-forward misses fall inside it. No newer token touches that band, so this
+  // coverage is out of sample in time.
   const older = capLoo(split.train, kept, loss);
-  const qo = (x: number) => r4(quantile(older, x));
+  const olderWf = capWf(split.train, kept, loss);
+  const olderPooled = [...older, ...olderWf];
+  const qo = (x: number) => r4(quantile(olderPooled, x));
   const fresh_bands = { p10: qo(0.1), p25: qo(0.25), p75: qo(0.75), p90: qo(0.9) };
+  // The v9 fresh band (older leave-one-out misses only) is kept for the before/after line.
+  const qv = (x: number) => quantile(older, x);
   return {
     loss,
     terms: kept,
@@ -381,8 +387,10 @@ export function fitCapModel(comps: Protocol[], candidates: Term[], loss: CapLoss
       in3x_wf: share(wf, -LN(3), LN(3)),
       in50_fresh: share(wf, fresh_bands.p25, fresh_bands.p75),
       in80_fresh: share(wf, fresh_bands.p10, fresh_bands.p90),
-      in50_older: share(older, fresh_bands.p25, fresh_bands.p75),
-      in80_older: share(older, fresh_bands.p10, fresh_bands.p90),
+      in50_fresh_v9: share(wf, qv(0.25), qv(0.75)),
+      in80_fresh_v9: share(wf, qv(0.1), qv(0.9)),
+      in50_older: share(olderPooled, fresh_bands.p25, fresh_bands.p75),
+      in80_older: share(olderPooled, fresh_bands.p10, fresh_bands.p90),
     },
     fresh_bands,
     n: ps.length,
